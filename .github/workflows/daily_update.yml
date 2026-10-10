@@ -1,0 +1,26 @@
+name: Daily market update
+
+on:
+  schedule:
+    - cron: "30 11 * * 1-5"   # 11:30 UTC = 5:00 PM IST, Mon–Fri (after NSE close)
+  workflow_dispatch:          # "Run workflow" button for manual runs
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Apply schema changes (safe, idempotent)
+        run: python src/setup_db.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Fetch prices and refresh signals
+        run: python src/daily_update.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
