@@ -68,6 +68,15 @@ erDiagram
         varchar     status
         integer     rows_upserted
     }
+    AUDIT_LOG {
+        bigint      audit_id PK
+        varchar     table_name
+        varchar     operation
+        text        row_key
+        jsonb       old_data
+        jsonb       new_data
+        timestamptz changed_at
+    }
 ```
 
 ## Normalisation notes
@@ -75,6 +84,7 @@ erDiagram
 - **3NF**: sector and city attributes live in their own tables; `companies` only stores foreign keys, so a city's coordinates or a sector's index name is stored exactly once.
 - `daily_prices` and `signals` share the composite key `(ticker, date)`. `signals` has a composite foreign key to `daily_prices`, so a signal can never exist without its price row.
 - `fundamentals` uses `(ticker, snapshot_date)` so repeated snapshots build a history instead of overwriting.
+- `audit_log` is filled only by triggers (`trg_audit`), so every change to companies, fundamentals and price corrections is traceable.
 - `pipeline_runs` is a standalone audit/log table (no FKs) used for pipeline monitoring.
 
 ## Constraints used

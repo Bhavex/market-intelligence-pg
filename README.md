@@ -23,6 +23,9 @@ GitHub Actions (weekdays 5 PM IST)                Power BI / Excel dashboards
 | `sql/02_seed.sql` | Sectors, HQ cities (with lat/long), 25 companies |
 | `sql/03_signals.sql` | `refresh_signals(from_date)` — momentum, volatility, SMA, RSI, volume z-score, trend, anomalies |
 | `sql/04_views.sql` | Views for Power BI: `v_company_daily`, `v_latest_snapshot`, `v_sector_daily`, `v_sector_strength`, `v_region_daily`, `v_anomalies`, `v_pipeline_health` |
+| `sql/05_audit_and_procedures.sql` | Audit log + triggers, validation trigger, `replace_company()` procedure, read-only role |
+| `demo/viva_queries.sql` | 14 demo queries: joins, GROUP BY/HAVING, subqueries, window functions, CTEs |
+| `demo/transactions_demo.sql` | ACID demo: atomicity, constraints, savepoints, procedures, isolation levels |
 | `src/setup_db.py` | Runs all SQL files (safe to re-run) |
 | `src/backfill.py` | One-time history load from 2015 |
 | `src/daily_update.py` | Incremental daily load + signal refresh |
@@ -58,6 +61,33 @@ Daily automation needs one GitHub secret: **Settings → Secrets and variables �
 | `is_anomaly` | Move > 3σ of the prior 20 days, or volume z-score > 3 |
 
 Prices use `adj_close` (split/dividend-adjusted) when available.
+
+## DBMS features used
+
+| Concept | Where |
+|---|---|
+| Normalisation (3NF), PK / FK / composite keys | `sql/01_schema.sql`, `docs/ER_DIAGRAM.md` |
+| CHECK / UNIQUE / NOT NULL constraints | `sql/01_schema.sql` |
+| Indexes (incl. partial index) | `sql/01_schema.sql` |
+| Views | `sql/04_views.sql` |
+| Stored function (PL/pgSQL, window functions, UPSERT) | `refresh_signals()` in `sql/03_signals.sql` |
+| Stored procedure (atomic multi-step change, row locking) | `replace_company()` in `sql/05_…` |
+| Triggers (AFTER audit, BEFORE validation, conditional `WHEN`) | `sql/05_…` |
+| Audit trail (JSONB old/new values) | `audit_log`, `v_recent_changes` |
+| Roles & privileges (read-only access) | `readonly_access` role in `sql/05_…` |
+| Transactions, savepoints, isolation levels | `demo/transactions_demo.sql` |
+
+## Read-only access for teammates / Power BI
+
+Create the login **with SQL** (roles made in the Neon Console UI get admin rights, so they would not be read-only).
+In the Neon SQL Editor run, choosing your own long password:
+
+```sql
+CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'choose-a-long-random-password-here';
+GRANT readonly_access TO powerbi_reader;
+```
+
+Teammates / Power BI connect as `powerbi_reader`: they can `SELECT` everything but cannot change or delete data.
 
 ## Useful queries
 
