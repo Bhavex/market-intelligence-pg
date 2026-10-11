@@ -140,6 +140,7 @@ select:hover, input[type="search"]:hover { border-color: var(--muted); }
 
 /* ---------- map ---------- */
 #map { height: 460px; border-radius: 10px; border: 1px solid var(--border); }
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6); }
 .leaflet-popup-content { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 
 /* ---------- how it works ---------- */

@@ -218,9 +218,11 @@
       (cities[k] ||= { city: r.city_name, state: r.state, lat: r.latitude, lon: r.longitude, cos: [] }).cos.push(r);
     });
     const map = L.map("map", { scrollWheelZoom: false }).setView([22.5, 79], 5);
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    // OpenStreetMap's free standard tiles (no API key). In dark mode they're darkened with a CSS filter.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 10,
+      className: dark ? "tiles-dark" : "",
     }).addTo(map);
     Object.values(cities).forEach((c) => {
       const avg = c.cos.reduce((a, r) => a + (r.momentum_20d || 0), 0) / c.cos.length;
