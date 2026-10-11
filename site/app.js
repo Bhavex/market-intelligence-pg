@@ -11,7 +11,8 @@
   const fmtDate = (s) => (s ? new Date(s + (s.length === 10 ? "T00:00:00" : "")).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "–");
 
   // diverging scale: red (neg) <- neutral -> blue (pos)
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const themeAttr = document.documentElement.dataset.theme;
+  const dark = themeAttr ? themeAttr === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   const NEU = dark ? [56, 56, 53] : [240, 239, 236];
   const POS = dark ? [57, 135, 229] : [28, 92, 171];
   const NEG = dark ? [230, 103, 103] : [180, 44, 44];
@@ -45,7 +46,9 @@
 
   Promise.all(["summary", "sectors", "stocks", "anomalies", "backtest"].map((f) => load(f + ".json")))
     .then(([summary, sectors, stocks, anomalies, backtest]) => {
+      document.body.classList.remove("loading");
       renderSummary(summary);
+      renderFacts(summary, sectors);
       renderStrength(sectors.strength);
       renderSectorChart(sectors);
       renderYears(sectors.yearly);
@@ -56,12 +59,15 @@
       renderPipeline(summary.pipeline);
     })
     .catch((e) => {
-      document.getElementById("updated").textContent = "Could not load data";
+      document.body.classList.remove("loading");
+      document.getElementById("updated").textContent = "Could not load data. Please refresh.";
       console.error(e);
     });
 
   function renderSummary(s) {
     document.getElementById("updated").textContent = "Data as of " + fmtDate(s.latest_date);
+    document.getElementById("lastUpdated").textContent = "Last updated: " +
+      new Date(s.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) + " IST";
     const k = [
       ["Latest trading day", fmtDate(s.latest_date), "end-of-day prices"],
       ["Stocks in uptrend", `${s.n_up} / ${s.stocks}`, "price > 50-day > 200-day avg"],
@@ -135,10 +141,25 @@
     const byTicker = Object.fromEntries(data.latest.map((r) => [r.ticker, r]));
     sel.innerHTML = SECTORS.map((s) => `<optgroup label="${s}">${
       data.latest.filter((r) => r.sector_name === s).map((r) => `<option value="${esc(r.ticker)}">${esc(r.company_name)} (${esc(r.ticker.replace(".NS", ""))})</option>`).join("")}</optgroup>`).join("");
-    sel.value = data.latest.find((r) => r.ticker === "INFY.NS") ? "INFY.NS" : data.latest[0].ticker;
+    const fromHash = decodeURIComponent((location.hash.match(/stock=([^&]+)/) || [])[1] || "");
+    sel.value = byTicker[fromHash] ? fromHash : byTicker["INFY.NS"] ? "INFY.NS" : data.latest[0].ticker;
+    const label = (r) => `${r.company_name} (${r.ticker.replace(".NS", "")})`;
+    document.getElementById("stockList").innerHTML = data.latest.map((r) => `<option value="${esc(label(r))}"></option>`).join("");
+    const search = document.getElementById("stockSearch");
+    search.addEventListener("change", () => {
+      const q = search.value.trim().toLowerCase();
+      if (!q) return;
+      const hit = data.latest.find((r) => label(r).toLowerCase() === q) ||
+                  data.latest.find((r) => label(r).toLowerCase().includes(q));
+      if (hit) { sel.value = hit.ticker; draw(true); search.value = ""; }
+      else toast("No stock matches “" + search.value + "”");
+    });
+    document.getElementById("copyLink").addEventListener("click", () =>
+      copyText(location.origin + location.pathname + "#stock=" + encodeURIComponent(sel.value), "Link to this stock copied"));
     let price, rsi;
-    const draw = () => {
+    const draw = (fromUser) => {
       const t = sel.value, s = data.series[t], r = byTicker[t];
+      if (fromUser === true) history.replaceState(null, "", "#stock=" + encodeURIComponent(t));
       document.getElementById("stockStats").innerHTML = [
         ["Close", "₹" + num(r.close)],
         ["1 day", `<span class="${cls(r.return_1d)}">${sign(r.return_1d, 2)}</span>`],
@@ -177,14 +198,17 @@
           plugins: { legend: { display: false }, tooltip: { callbacks: { title: (i) => fmtDate(i[0].label), label: (c) => ` RSI: ${c.raw}` } } },
           scales: {
             x: { ticks: { maxTicksLimit: 8, callback: function (v) { return fmtDate(this.getLabelForValue(v)).replace(/^\d+ /, ""); } }, grid: { display: false } },
-            y: { min: 0, max: 100, ticks: { stepSize: 30, callback: (v) => ([30, 70].includes(v) ? v + (v === 70 ? " overbought" : " oversold") : v) },
+            y: { min: 0, max: 100,
+                 afterBuildTicks: (ax) => { ax.ticks = [0, 30, 70, 100].map((value) => ({ value })); },
+                 ticks: { callback: (v) => ([30, 70].includes(v) ? v + (v === 70 ? " overbought" : " oversold") : v) },
                  grid: { color: (c) => ([30, 70].includes(c.tick.value) ? css("--axis") : "transparent") } },
           },
         },
       });
     };
-    sel.addEventListener("change", draw);
+    sel.addEventListener("change", () => draw(true));
     draw();
+    if (fromHash) document.getElementById("stocks").scrollIntoView();
   }
 
   function renderMap(rows) {
@@ -205,7 +229,8 @@
         radius: 7 + 4 * Math.sqrt(c.cos.length), color: css("--surface"), weight: 2, fillColor: fill, fillOpacity: 0.9,
       }).addTo(map).bindPopup(
         `<strong>${esc(c.city)}, ${esc(c.state)}</strong><br>${c.cos.length} compan${c.cos.length > 1 ? "ies" : "y"} · avg 1-month ${sign(avg)}<br>` +
-        c.cos.map((r) => `${esc(r.company_name)} (${esc(r.sector_name)}): <span class="${cls(r.momentum_20d)}">${sign(r.momentum_20d)}</span>`).join("<br>")
+        c.cos.map((r) => `${esc(r.company_name)} (${esc(r.sector_name)}): <span class="${cls(r.momentum_20d)}">${sign(r.momentum_20d)}</span>`).join("<br>") +
+        `<br><a href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lon}" target="_blank" rel="noopener">Directions to ${esc(c.city)} ↗</a>`
       ).bindTooltip(`${c.city}: ${c.cos.length}`, { direction: "top" });
     });
   }
@@ -258,6 +283,18 @@
        Most-held: ${Object.entries(b.picks).map(([k, v]) => `${k} ${v}`).join(", ")}.</td></tr>`;
   }
 
+  function renderFacts(s, sec) {
+    const years = new Date(s.latest_date).getFullYear() - new Date(s.first_date).getFullYear() + 1;
+    const facts = [
+      [(s.price_rows + s.signal_rows).toLocaleString("en-IN"), "rows of prices and signals"],
+      [years + " years", "of daily history per stock"],
+      ["8 checks", "of data quality on every load"],
+      ["0", "manual steps per day"],
+    ];
+    document.getElementById("facts").innerHTML =
+      facts.map(([b, t]) => `<div class="fact"><b>${b}</b><span>${t}</span></div>`).join("");
+  }
+
   function renderPipeline(rows) {
     const icon = { success: "✅", partial: "⚠️", failed: "❌", running: "⏳" };
     const name = { daily_update: "Daily price update", data_quality: "Data-quality checks", backfill: "History backfill", fundamentals: "Fundamentals snapshot" };
@@ -267,4 +304,36 @@
         <td>${r.finished_at ? new Date(r.finished_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "–"}</td>
         <td>${icon[r.status] || ""} ${esc(r.status)}</td><td style="white-space:normal">${esc(r.message)}</td></tr>`).join("");
   }
+
+  // ---------- page UI: theme, copy, toast, progress, back-to-top ----------
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+  function copyText(text, msg) {
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+      .then(() => toast(msg || "Copied"))
+      .catch(() => toast("Couldn't copy, please select and copy manually"));
+  }
+  document.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", () => copyText(document.getElementById(b.dataset.copy).innerText, "SQL copied")));
+  const themeBtn = document.getElementById("themeToggle");
+  themeBtn.textContent = dark ? "☀ Light" : "☾ Dark";
+  themeBtn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+  themeBtn.addEventListener("click", () => {
+    const next = dark ? "light" : "dark";
+    try { localStorage.setItem("theme", next); } catch (e) {}
+    document.documentElement.dataset.theme = next;
+    location.reload();                       // charts and map re-render in the new colours
+  });
+  const bar = document.getElementById("progress"), top = document.getElementById("toTop");
+  const onScroll = () => {
+    const h = document.documentElement, max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + "%";
+    top.classList.toggle("show", h.scrollTop > 600);
+  };
+  addEventListener("scroll", onScroll, { passive: true });
+  top.addEventListener("click", () => scrollTo({ top: 0 }));
+  onScroll();
 })();

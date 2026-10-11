@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bhavex.github.io/market-intelligence-pg/sitemap.xml
