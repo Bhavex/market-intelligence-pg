@@ -9,6 +9,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,9 +20,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Apply schema changes (safe, idempotent)
         run: python src/setup_db.py
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Fetch prices and refresh signals
         run: python src/daily_update.py
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Refresh reporting layer + data-quality checks
+        run: python src/post_load.py

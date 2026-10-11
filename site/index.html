@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSE Sector Intelligence</title>
+<meta name="description" content="Self-updating PostgreSQL market database for 25 NSE large caps: sector strength, signals, anomalies and a sector-rotation backtest. Updated every weekday after market close.">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-inner">
+    <div>
+      <h1>NSE Sector Intelligence</h1>
+      <p class="sub">25 large caps · 5 sectors · end-of-day data since 2015, updated automatically every weekday after market close</p>
+    </div>
+    <div class="top-meta">
+      <span class="pill" id="updated">Loading…</span>
+      <a class="btn" href="https://github.com/Bhavex/market-intelligence-pg" target="_blank" rel="noopener">View code on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="kpis" id="kpis" aria-label="Key figures"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Sector strength today</h2>
+      <p class="note">Average 20-day momentum of each sector's 5 stocks, ranked</p>
+    </div>
+    <div class="grid-2">
+      <div class="chart-box short"><canvas id="strengthChart" aria-label="Sector momentum bar chart"></canvas></div>
+      <div class="table-scroll"><table id="strengthTable" class="tbl"></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Sector performance since 2015</h2>
+      <p class="note">Equal-weighted sector index, start = 100 (weekly)</p>
+    </div>
+    <div class="chart-box tall"><canvas id="sectorChart" aria-label="Sector index line chart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Calendar-year returns</h2>
+      <p class="note">Blue = gain, red = loss; darker = bigger move</p>
+    </div>
+    <div class="table-scroll"><table id="yearTable" class="tbl heat"></table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head row">
+      <div>
+        <h2>Stock explorer</h2>
+        <p class="note">Last 2 years · price with 50 and 200-day moving averages · dots mark anomaly days</p>
+      </div>
+      <label class="select-label">Stock
+        <select id="stockSelect"></select>
+      </label>
+    </div>
+    <div class="stat-row" id="stockStats"></div>
+    <div class="chart-box tall"><canvas id="priceChart" aria-label="Price chart"></canvas></div>
+    <div class="chart-box short"><canvas id="rsiChart" aria-label="RSI chart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Where the companies are headquartered</h2>
+      <p class="note">Circle size = number of companies · colour = average 20-day momentum (blue up, red down)</p>
+    </div>
+    <div id="map" role="img" aria-label="Map of India with company headquarters"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Recent anomalies</h2>
+      <p class="note">Days where a move was over 3× its recent volatility, or volume over 3 standard deviations above normal (last 90 days)</p>
+    </div>
+    <div class="table-scroll"><table id="anomTable" class="tbl"></table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Backtest: sector momentum rotation</h2>
+      <p class="note">Each month, hold the sector with the strongest 20-day momentum at the previous month-end, vs. holding all 5 sectors equally. No trading costs, taxes or slippage; past results don't predict future returns.</p>
+    </div>
+    <div class="grid-2 wide-left">
+      <div class="chart-box tall"><canvas id="btChart" aria-label="Backtest growth chart"></canvas></div>
+      <div class="table-scroll"><table id="btTable" class="tbl"></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Pipeline health</h2>
+      <p class="note">Every job logs itself in the <code>pipeline_runs</code> table</p>
+    </div>
+    <div class="table-scroll"><table id="pipeTable" class="tbl"></table></div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p><strong>How it works:</strong> Yahoo Finance → Python (GitHub Actions, weekdays 5 PM IST) → PostgreSQL on Neon → signals computed in SQL with window functions → data-quality checks → this static site. The site reads exported JSON only; it never touches the database.</p>
+  <p>DBMS course project, VIT Vellore. Educational analytics, not investment advice.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
