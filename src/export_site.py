@@ -47,6 +47,50 @@ def write(name, obj):
     print(f"wrote {name} ({(OUT / name).stat().st_size / 1024:.0f} KB)")
 
 
+SECTOR_COLORS = {"IT": "#3987e5", "Banking": "#d95926", "Auto": "#199e70", "Pharma": "#c98500", "FMCG": "#d55181"}
+
+
+def og_image(weekly, latest):
+    """1200x630 social-share card (LinkedIn/WhatsApp preview), regenerated every day."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    bg, ink, muted = "#1a1a19", "#f0efec", "#a5a49c"
+    fig = plt.figure(figsize=(12, 6.3), dpi=100, facecolor=bg)
+    fig.text(0.05, 0.86, "NSE Sector Intelligence", color=ink, fontsize=34, weight="bold")
+    fig.text(0.05, 0.79, "Self-updating PostgreSQL database · 25 large caps · 5 sectors · signals computed in SQL",
+             color=muted, fontsize=15)
+    ax = fig.add_axes([0.05, 0.14, 0.72, 0.58], facecolor=bg)
+    names = [n for n in ["IT", "Banking", "Auto", "Pharma", "FMCG"] if n in weekly]
+    for name in names:
+        ax.plot(weekly.index, weekly[name], color=SECTOR_COLORS[name], lw=2.4)
+    # end-of-line labels, nudged apart so they never overlap
+    lo, hi = float(weekly[names].min().min()), float(weekly[names].max().max())
+    gap = (hi - lo) * 0.07
+    ends = sorted((float(weekly[n].iloc[-1]), n) for n in names)
+    ys = []
+    for y, _ in ends:
+        ys.append(max(y, ys[-1] + gap) if ys else y)
+    for (y_end, name), y in zip(ends, ys):
+        ax.annotate(name, (weekly.index[-1], y), xytext=(10, 0), textcoords="offset points",
+                    color=SECTOR_COLORS[name], fontsize=13, va="center", weight="bold", annotation_clip=False)
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_locator(mdates.YearLocator(2 if len(weekly) > 300 else 1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.tick_params(colors=muted, labelsize=11)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color("#383835")
+    ax.grid(axis="y", color="#2c2c2a", lw=1)
+    fig.text(0.05, 0.05, f"Sector index since 2015 (start = 100) · data as of {latest:%d %b %Y}",
+             color=muted, fontsize=12)
+    fig.text(0.95, 0.05, "bhavex.github.io/market-intelligence-pg", color=ink, fontsize=12, ha="right")
+    fig.savefig(OUT.parent / "og.png", facecolor=bg)
+    plt.close(fig)
+    print("wrote og.png")
+
+
 def backtest(conn):
     """Monthly sector rotation: hold the sector with the best 20-day momentum at the
     end of the previous month, vs. holding all 5 sectors equally. No costs, no slippage."""
@@ -142,6 +186,8 @@ def main():
                        "returns": {c: [clean(v, 4) for v in yearly[c]] for c in yearly.columns}},
             "strength": records(strength, 4),
         })
+
+        og_image(weekly, latest)
 
         # ---------- stocks ----------
         fund = q(conn, """SELECT DISTINCT ON (ticker) ticker, market_cap, pe_ratio
