@@ -20,7 +20,7 @@ def main():
         with pipeline_run(conn, "backfill") as run:
             for i, t in enumerate(tickers, 1):
                 try:
-                    n = upsert_rows(conn, fetch_rows(t, start))
+                    n = upsert_rows(conn, fetch_rows(t, start)).total
                     run["rows_upserted"] += n
                     print(f"[{i}/{len(tickers)}] {t}: {n} rows")
                     if n == 0:
