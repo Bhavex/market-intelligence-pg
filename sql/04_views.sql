@@ -23,19 +23,24 @@ SELECT DISTINCT ON (ticker) *
 FROM v_company_daily
 ORDER BY ticker, price_date DESC;
 
--- Equal-weighted sector performance per day
+-- Equal-weighted sector performance per day.
+-- breakout_count / strong_breakout_count were added at the END so existing columns, order and
+-- types are unchanged (CREATE OR REPLACE VIEW; never DROP this view, or grants are lost).
 CREATE OR REPLACE VIEW v_sector_daily AS
-SELECT price_date, sector_name,
+SELECT v.price_date, v.sector_name,
        COUNT(*)                         AS n_stocks,
-       AVG(return_1d)                   AS avg_return_1d,
-       AVG(momentum_20d)                AS avg_momentum_20d,
-       AVG(volatility_20d)              AS avg_volatility_20d,
-       AVG(rsi_14)                      AS avg_rsi_14,
-       SUM(CASE WHEN trend = 'UP'   THEN 1 ELSE 0 END) AS n_uptrend,
-       SUM(CASE WHEN trend = 'DOWN' THEN 1 ELSE 0 END) AS n_downtrend,
-       SUM(CASE WHEN is_anomaly     THEN 1 ELSE 0 END) AS n_anomalies
-FROM v_company_daily
-GROUP BY price_date, sector_name;
+       AVG(v.return_1d)                 AS avg_return_1d,
+       AVG(v.momentum_20d)              AS avg_momentum_20d,
+       AVG(v.volatility_20d)            AS avg_volatility_20d,
+       AVG(v.rsi_14)                    AS avg_rsi_14,
+       SUM(CASE WHEN v.trend = 'UP'   THEN 1 ELSE 0 END) AS n_uptrend,
+       SUM(CASE WHEN v.trend = 'DOWN' THEN 1 ELSE 0 END) AS n_downtrend,
+       SUM(CASE WHEN v.is_anomaly     THEN 1 ELSE 0 END) AS n_anomalies,
+       COUNT(*) FILTER (WHERE s.breakout_52w)     AS breakout_count,         -- stocks above their 52-week high
+       COUNT(*) FILTER (WHERE s.strong_breakout)  AS strong_breakout_count   -- ... on volume z-score > 2
+FROM v_company_daily v
+LEFT JOIN signals s ON s.ticker = v.ticker AND s.signal_date = v.price_date
+GROUP BY v.price_date, v.sector_name;
 
 -- Sector strength: each sector's 20-day momentum vs. the whole universe, ranked per day
 CREATE OR REPLACE VIEW v_sector_strength AS
