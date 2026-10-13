@@ -1,9 +1,17 @@
 name: Daily market update
 
+# Three attempts per trading day, so a delayed or dropped GitHub schedule, or late
+# Yahoo data, can't make us miss a day. Re-running is safe: every load is an UPSERT.
 on:
   schedule:
-    - cron: "30 11 * * 1-5"   # 11:30 UTC = 5:00 PM IST, Mon–Fri (after NSE close)
+    - cron: "40 11 * * 1-5"   # 5:10 PM IST  — first load after NSE close
+    - cron: "40 14 * * 1-5"   # 8:10 PM IST  — retry (late data / delayed runs)
+    - cron: "40 1 * * 2-6"    # 7:10 AM IST next day — final check: fails loudly if a day is missing
   workflow_dispatch:          # "Run workflow" button for manual runs
+
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -11,6 +19,7 @@ jobs:
     timeout-minutes: 20
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      STRICT_FRESHNESS: ${{ github.event.schedule == '40 1 * * 2-6' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
