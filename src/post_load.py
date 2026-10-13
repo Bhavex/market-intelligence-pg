@@ -9,11 +9,15 @@ import sys
 
 from db import get_conn, pipeline_run
 
+# The final run of the day (next morning) sets STRICT_FRESHNESS=1: if any trading day is
+# still missing then, the check fails and GitHub emails the repo owner.
+STRICT = os.environ.get("STRICT_FRESHNESS") == "1"
+
 # (name, severity, SQL returning the number of bad rows, what it means)
 CHECKS = [
-    ("freshness", "error",
-     "SELECT CASE WHEN MAX(price_date) >= CURRENT_DATE - 5 THEN 0 ELSE 1 END FROM daily_prices",
-     "Latest price is more than 5 days old"),
+    ("freshness", "error" if STRICT else "warn",
+     "SELECT COUNT(*) FROM v_data_freshness WHERE NOT is_fresh OR latest_price_date IS NULL",
+     "Stocks missing the latest trading day (from the NSE holiday calendar)"),
     ("non_positive_prices", "error",
      "SELECT COUNT(*) FROM daily_prices WHERE close <= 0 OR open <= 0 OR high <= 0 OR low <= 0",
      "Prices that are zero or negative"),
@@ -52,6 +56,9 @@ def main():
             conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_sector_daily")
             conn.commit()
             print("Refreshed mv_sector_daily")
+            expected = conn.execute("SELECT expected_latest_trading_day()").fetchone()[0]
+            latest = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]
+            print(f"Expected latest trading day: {expected} | latest in database: {latest} | strict: {STRICT}")
 
             for name, severity, sql, meaning in CHECKS:
                 bad = conn.execute(sql).fetchone()[0]
