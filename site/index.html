@@ -35,7 +35,7 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body class="loading">
@@ -68,7 +68,7 @@
     <p class="sub">25 NSE large caps across IT, Banking, Auto, Pharma and FMCG. Prices since 2015, signals computed inside a PostgreSQL database, refreshed automatically every weekday.</p>
     <div class="hero-row">
       <span class="pill" id="updated">Loading data…</span>
-      <span class="pill quiet">New data every weekday by ~5:30 PM IST</span>
+      <span class="pill quiet">Updated every weekday evening · re-checked next morning</span>
       <a class="btn ghost" href="#stocks">Explore a stock ↓</a>
     </div>
   </section>
@@ -161,7 +161,7 @@
       <p class="note">The case study behind this page</p>
     </div>
     <ol class="steps">
-      <li><strong>Collect.</strong> Every weekday at 5 PM IST, a GitHub Actions job fetches end-of-day prices for 25 stocks from Yahoo Finance and upserts them into PostgreSQL (hosted on Neon).</li>
+      <li><strong>Collect.</strong> Every weekday evening (with a retry and a next-morning check), a GitHub Actions job fetches end-of-day prices for 25 stocks from Yahoo Finance and upserts them into PostgreSQL (hosted on Neon).</li>
       <li><strong>Compute in the database.</strong> A PL/pgSQL function uses window functions to calculate momentum, volatility, 50/200-day averages, RSI, volume z-scores, trend and anomaly flags for every stock and day.</li>
       <li><strong>Check.</strong> Eight automated data-quality checks (freshness, impossible prices, missing days, signal coverage…) stop the pipeline if anything looks wrong. Triggers record every change in an audit log.</li>
       <li><strong>Publish.</strong> A materialized view pre-aggregates sector data; a script exports it to static JSON and this site is rebuilt. The website never connects to the database.</li>
@@ -191,7 +191,7 @@ ORDER BY strength_rank;</code></pre>
 
   <section class="card" id="faq">
     <div class="card-head"><h2>Frequently asked questions</h2></div>
-    <details><summary>Is this real-time data?</summary><p>No. It uses end-of-day prices: the database is updated once every weekday after the NSE closes (around 5 PM IST, live on this page by about 5:30 PM). Holidays and weekends have no new data.</p></details>
+    <details><summary>Is this real-time data?</summary><p>No. It uses end-of-day prices: the database is updated every weekday evening after the NSE closes, with a second attempt later that night and a final check the next morning. Holidays and weekends have no new data.</p></details>
     <details><summary>Where does the data come from?</summary><p>Daily prices come from Yahoo Finance via the open-source <code>yfinance</code> library, stored in a PostgreSQL database. Prices are adjusted for splits and dividends where available.</p></details>
     <details><summary>What do momentum, RSI and "trend" mean?</summary><p><strong>Momentum</strong> is the return over the last 20 (or 60) trading days. <strong>RSI</strong> (0–100) compares recent gains with losses; above 70 is often called overbought, below 30 oversold. <strong>Trend</strong> is UP when price is above its 50-day average, which is above its 200-day average, and DOWN when the reverse is true.</p></details>
     <details><summary>What counts as an anomaly?</summary><p>A day is flagged when the price move is more than 3 times the stock's typical daily move over the previous 20 days, or when trading volume is more than 3 standard deviations above its recent average. Results days, big news and index rebalances often show up here.</p></details>
@@ -215,6 +215,6 @@ ORDER BY strength_rank;</code></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

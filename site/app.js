@@ -224,6 +224,7 @@
       maxZoom: 10,
       className: dark ? "tiles-dark" : "",
     }).addTo(map);
+    map.fitBounds(L.latLngBounds(Object.values(cities).map((c) => [c.lat, c.lon])).pad(0.25));
     Object.values(cities).forEach((c) => {
       const avg = c.cos.reduce((a, r) => a + (r.momentum_20d || 0), 0) / c.cos.length;
       const fill = diverge(avg, 0.08).bg;
