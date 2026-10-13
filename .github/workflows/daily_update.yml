@@ -33,3 +33,5 @@ jobs:
         run: python src/daily_update.py
       - name: Refresh reporting layer + data-quality checks
         run: python src/post_load.py
+      - name: Verify 52-week signals
+        run: python src/verify_52w.py

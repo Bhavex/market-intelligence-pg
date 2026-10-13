@@ -28,7 +28,7 @@ flowchart LR
 ## Highlights
 
 - **~73,000 price rows + ~73,000 signal rows**, loaded by an idempotent backfill and kept current by a scheduled pipeline
-- **Signal engine in SQL:** momentum, volatility, 50/200-day moving averages, RSI, volume z-score, trend and anomaly flags, all in one PL/pgSQL function using window functions and `INSERT … ON CONFLICT`
+- **Signal engine in SQL:** momentum, volatility, 50/200-day moving averages, RSI, volume z-score, 52-week high breakouts, trend and anomaly flags, all in one PL/pgSQL function using window functions and `INSERT … ON CONFLICT`
 - **Measured performance:** indexes, a partial index, a materialized view and year partitioning are benchmarked with `EXPLAIN ANALYZE` every week → [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
 - **Data-quality gate:** 8 automated checks (freshness, impossible prices, missing trading days, signal coverage…) fail the pipeline if data is bad
 - **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
@@ -62,9 +62,13 @@ flowchart LR
 | `sql/06_performance.sql` | Materialized view `mv_sector_daily` |
 | `src/setup_db.py` | Applies all SQL files (idempotent, runs before every load) |
 | `src/backfill.py` | One-time history load from 2015 |
-| `src/daily_update.py` | Incremental daily load + signal refresh |
+| `src/daily_update.py` | Incremental daily load (re-upserts the last 5 sessions) + signal refresh |
 | `src/post_load.py` | Refreshes the materialized view, runs data-quality checks |
 | `src/fundamentals.py` | Weekly fundamentals snapshot |
+| `src/verify_52w.py`, `sql/validation/52w_checks.sql` | Validation of the 52-week signals |
+| `src/dq_audit.py` | Data-quality audit: stored prices vs Yahoo |
+| `src/adya_snapshot.py`, `sql/analytics/` | Analytics report queries and a before/after comparison tool |
+| `tests/` | Unit tests for the price pipeline |
 | `src/benchmark.py` | `EXPLAIN ANALYZE` benchmarks → `docs/BENCHMARKS.md` |
 | `src/export_site.py` | Exports dashboard JSON + computes the backtest |
 | `site/` | Static dashboard (Chart.js + Leaflet), deployed to GitHub Pages |
@@ -84,8 +88,31 @@ flowchart LR
 | `volume_zscore_20d` | Today's volume vs. the previous 20 days |
 | `trend` | `UP` if price > SMA50 > SMA200, `DOWN` if reverse, else `NEUTRAL` |
 | `is_anomaly` | Move > 3σ of the prior 20 days, or volume z-score > 3 |
+| `high_52w` | Highest `adj_close` of the **previous 252 trading days, today excluded** |
+| `breakout_52w` | `adj_close > high_52w` (a new 52-week high) |
+| `pct_from_52w_high` | `ROUND((adj_close / high_52w - 1) * 100, 2)` — **negative below the high, positive on a breakout day** (e.g. `-3.20` = 3.2% under the high, `+1.14` = 1.14% above it) |
+| `strong_breakout` | `breakout_52w` AND `volume_zscore_20d > 2` (a NULL z-score counts as FALSE) |
 
 Prices use `adj_close` (split/dividend-adjusted) when available.
+
+### 52-week signals: definitions and rules
+
+- **Why the high excludes today:** the window is `ROWS BETWEEN 252 PRECEDING AND 1 PRECEDING`. If today were
+  inside the window, today's close could never exceed its own maximum, so `breakout_52w` would be
+  impossible and `pct_from_52w_high` could never be positive. Comparing today with the *previous* 252 sessions
+  is what makes "new 52-week high" mean something. 252 trading days ≈ one year.
+- **NULL until there is enough history:** a row gets a value only if it has exactly 252 prior non-null
+  `adj_close` rows (`COUNT(adj_close) = 252` over the same window). Otherwise all four columns are NULL, so every
+  stock has 252 leading NULL rows (fewer or more only if `adj_close` itself has gaps: a missing `adj_close`
+  also blanks the next 252 rows). A row whose own `adj_close` is NULL is NULL too.
+- **Full history on every run:** Yahoo restates old `adj_close` after dividends, so the four columns are
+  recomputed over the *entire* `daily_prices` history of every ticker each time `refresh_signals()` runs
+  (about 70k rows, a few seconds), never only for new dates. Only rows whose values changed are written.
+  `strong_breakout` is computed after `volume_zscore_20d` in the same call.
+- **Rounding:** `breakout_52w` compares the unrounded values; `high_52w` and `pct_from_52w_high` are
+  rounded for display (2 decimals), so in a rare tie `adj_close > high_52w` on the rounded numbers can differ from the flag.
+- The columns are added by an idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `sql/01_schema.sql`.
+  `powerbi_reader` keeps `SELECT` on `signals` (the table-level grant to `readonly_access` covers new columns).
 
 ## Run it yourself
 
@@ -101,6 +128,46 @@ python src/post_load.py       # materialized view + data-quality checks
 ```
 
 For automation, add the connection string as the GitHub Actions secret `DATABASE_URL`, then run **One-time setup and backfill** from the Actions tab. To publish the dashboard, set **Settings → Pages → Source** to **GitHub Actions**.
+
+## Daily update behaviour
+
+`src/daily_update.py` runs after the close and is built so that a wrong row corrects itself:
+
+- **Re-upserts the last 5 NSE trading sessions for every ticker on every run**
+  (`ON CONFLICT (ticker, price_date) DO UPDATE`; the 5 sessions come from the trading calendar in
+  `sql/07_trading_calendar.sql`, not 5 calendar days). If a ticker's stored data is older than that window it
+  fetches back to its last stored date. Only rows whose values changed are rewritten (and audited).
+- **Never stores a partial same-day bar:** today's bar is held back until **16:30 IST** (15:30 close + 1 hour buffer;
+  the same cut-off as `expected_latest_trading_day()`). A run at 09:40 stores nothing for today.
+- **Logs what it did:** per ticker and in total — rows *inserted*, *updated* (value changed, with the dates),
+  *unchanged* and *held back* (session not final). `pipeline_runs.rows_upserted` counts rows actually written and
+  `pipeline_runs.message` carries the breakdown.
+- **Hourly fallback is insert-only:** when Yahoo's daily series lacks a weekday, a row is rebuilt from hourly bars. Those
+  rows are approximate (close is right, but open/high/low can be slightly off and the summed volume can be 20–50% low)
+  so they only fill a gap and can never overwrite a stored row; Yahoo's daily bar replaces them if it appears later.
+
+Tools (all read-only except the tests' rolled-back transactions):
+
+| Command | Purpose |
+|---|---|
+| `python src/verify_52w.py` | Checks the 52-week signals (SQL checks in `sql/validation/52w_checks.sql` + an independent pandas recomputation); runs in the daily workflow |
+| `python src/dq_audit.py` | Stored prices vs Yahoo for the last 10 sessions, all tickers: >0.5% differences, rows on weekends/holidays, missing trading days, identical consecutive closes, rows written before the close |
+| `python src/adya_snapshot.py --tag before` / `--compare before after` | Saves/compares the results of the analytics report's queries 3a, 3b, 3c, 5 (`sql/analytics/person_b_queries.sql`) |
+| `TEST_DATABASE_URL=... python -m unittest discover -s tests -v` | Unit tests; DB tests need a throwaway database and never read `DATABASE_URL` |
+
+## Reporting views
+
+| View | Notes |
+|---|---|
+| `v_company_daily` | One row per company per day: price + signals + sector + location |
+| `v_sector_daily` | Equal-weighted sector stats per day. Columns, in order: `price_date, sector_name, n_stocks, avg_return_1d, avg_momentum_20d, avg_volatility_20d, avg_rsi_14, n_uptrend, n_downtrend, n_anomalies`, then the new **`breakout_count`** (stocks with `breakout_52w` TRUE that day in the sector) and **`strong_breakout_count`** (those with `strong_breakout`), both `bigint`. |
+| `v_sector_strength` | Sector 20-day momentum vs the universe, ranked per day (unchanged) |
+
+`v_sector_daily` is changed with `CREATE OR REPLACE VIEW` and the new columns are appended at the end, so existing
+column names, order and types — and the `powerbi_reader` grants — are untouched. **Never `DROP` this view**: dropping it
+removes the grants and breaks `v_sector_strength`. The materialized copy `mv_sector_daily` keeps its original 10
+columns (a materialized view cannot be altered in place); read the new counts from `v_sector_daily`, or drop and recreate
+`mv_sector_daily` (and re-grant `SELECT` to `readonly_access`) if the site/Power BI should read them from the materialized copy.
 
 ## Read-only access for teammates / Power BI
 
