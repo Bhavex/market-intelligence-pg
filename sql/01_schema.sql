@@ -67,6 +67,14 @@ CREATE TABLE IF NOT EXISTS signals (
     FOREIGN KEY (ticker, signal_date) REFERENCES daily_prices(ticker, price_date) ON DELETE CASCADE
 );
 
+-- 52-week breakout signals (added later, so ALTER ... IF NOT EXISTS: safe on existing databases).
+-- All four are NULL until a stock has 252 prior trading days of adj_close. See README "Signals".
+ALTER TABLE signals
+    ADD COLUMN IF NOT EXISTS high_52w          NUMERIC(12,2),  -- max adj_close of the previous 252 trading days (today excluded)
+    ADD COLUMN IF NOT EXISTS breakout_52w      BOOLEAN,        -- adj_close > high_52w
+    ADD COLUMN IF NOT EXISTS pct_from_52w_high NUMERIC(8,2),   -- (adj_close / high_52w - 1) * 100; negative below the high, positive on a breakout
+    ADD COLUMN IF NOT EXISTS strong_breakout   BOOLEAN;        -- breakout_52w AND volume_zscore_20d > 2
+
 -- Fundamentals are stored as dated snapshots, so history builds up over time.
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          VARCHAR(20) NOT NULL REFERENCES companies(ticker),
