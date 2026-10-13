@@ -2,7 +2,10 @@
 -- 03_signals.sql — signal engine written in SQL (window functions)
 --   SELECT refresh_signals('2024-01-01');   -- recompute from a date
 --   SELECT refresh_signals();               -- default: last 10 days
--- Returns the number of signal rows upserted.
+-- Returns the number of signal rows upserted by the main statement.
+-- The 52-week columns are a second statement that ALWAYS covers the full history of every
+-- ticker (Yahoo restates old adj_close after dividends, so recomputing only new dates would
+-- leave stale highs behind). It runs after volume_zscore_20d is written (strong_breakout).
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION refresh_signals(p_from DATE DEFAULT CURRENT_DATE - 10)
@@ -11,6 +14,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_rows INTEGER;
+    v_52w  INTEGER;
 BEGIN
     WITH base AS (
         -- 400 calendar days of look-back so the 200-day SMA is correct at p_from
@@ -85,6 +89,44 @@ BEGIN
            computed_at = EXCLUDED.computed_at;
 
     GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+    -- 52-week high / breakout, over the FULL daily_prices history (no date filter).
+    -- Window = the previous 252 trading rows of adj_close, today excluded. A row gets values only
+    -- if all 252 prior adj_close values exist; otherwise all four columns stay NULL.
+    -- Only rows whose values actually changed are written (no daily rewrite of ~70k rows).
+    WITH hi AS (
+        SELECT ticker, price_date, adj_close,
+               MAX(adj_close)   OVER w52 AS high_raw,
+               COUNT(adj_close) OVER w52 AS n_prior
+        FROM daily_prices
+        WINDOW w52 AS (PARTITION BY ticker ORDER BY price_date ROWS BETWEEN 252 PRECEDING AND 1 PRECEDING)
+    ),
+    f AS (
+        SELECT hi.ticker, hi.price_date,
+               (hi.n_prior = 252 AND hi.adj_close IS NOT NULL AND hi.high_raw > 0) AS eligible,
+               hi.adj_close, hi.high_raw, z.volume_zscore_20d AS vol_z
+        FROM hi
+        JOIN signals z ON z.ticker = hi.ticker AND z.signal_date = hi.price_date
+    ),
+    calc AS (
+        SELECT ticker, price_date,
+               CASE WHEN eligible THEN ROUND(high_raw::numeric, 2) END                              AS high_52w,
+               CASE WHEN eligible THEN adj_close > high_raw END                                     AS breakout_52w,
+               CASE WHEN eligible THEN ROUND(((adj_close / high_raw - 1) * 100)::numeric, 2) END    AS pct_from_52w_high,
+               CASE WHEN eligible THEN adj_close > high_raw AND COALESCE(vol_z > 2, FALSE) END      AS strong_breakout
+        FROM f
+    )
+    UPDATE signals s
+    SET high_52w = c.high_52w, breakout_52w = c.breakout_52w,
+        pct_from_52w_high = c.pct_from_52w_high, strong_breakout = c.strong_breakout,
+        computed_at = now()
+    FROM calc c
+    WHERE s.ticker = c.ticker AND s.signal_date = c.price_date
+      AND (s.high_52w, s.breakout_52w, s.pct_from_52w_high, s.strong_breakout)
+          IS DISTINCT FROM (c.high_52w, c.breakout_52w, c.pct_from_52w_high, c.strong_breakout);
+
+    GET DIAGNOSTICS v_52w = ROW_COUNT;
+    RAISE NOTICE 'refresh_signals: % signal rows upserted, % rows with new 52-week values', v_rows, v_52w;
     RETURN v_rows;
 END;
 $$;
