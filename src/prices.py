@@ -1,9 +1,11 @@
 """Fetch daily OHLCV from Yahoo Finance and upsert into daily_prices."""
 import math
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import yfinance as yf
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 UPSERT_SQL = """
 INSERT INTO daily_prices (ticker, price_date, open, high, low, close, adj_close, volume)
@@ -23,27 +25,48 @@ def _num(x):
 
 
 def _history(ticker: str, retries: int = 3, **kwargs):
+    """Returns (dataframe, metadata). Metadata holds Yahoo's live quote for the latest session."""
     for attempt in range(1, retries + 1):
         try:
-            return yf.Ticker(ticker).history(interval="1d", auto_adjust=False, actions=False, **kwargs)
+            t = yf.Ticker(ticker)
+            df = t.history(interval="1d", auto_adjust=False, actions=False, **kwargs)
+            return df, (t.history_metadata or {})
         except Exception:
             if attempt == retries:
                 raise
             time.sleep(2 * attempt)
 
 
-def _to_rows(ticker: str, df) -> dict:
+def _session_close(meta, day):
+    """Yahoo often leaves the newest daily candle's close empty for NSE stocks until its
+    overnight batch runs, while the quote (regularMarketPrice) already has the closing price.
+    Use that price, but only if the quote belongs to the same trading day."""
+    price, ts = meta.get("regularMarketPrice"), meta.get("regularMarketTime")
+    if not price or not ts:
+        return None
+    if datetime.fromtimestamp(ts, IST).date() != day:
+        return None
+    return _num(price)
+
+
+def _to_rows(ticker: str, df, meta=None) -> dict:
     rows = {}
+    last_day = df.index[-1].date() if len(df) else None
     for ts, r in df.iterrows():
+        day = ts.date()
         close = _num(r.get("Close"))
+        adj = _num(r.get("Adj Close"))
+        if close is None and day == last_day and meta:
+            close = _session_close(meta, day)      # fill the newest day from the live quote
+            adj = adj or close                     # tomorrow's run overwrites with Yahoo's final values
         if close is None or close <= 0:
-            continue  # skip holidays / empty bars
+            continue                               # no usable price for this day
         vol = r.get("Volume")
         vol = None if vol is None or (isinstance(vol, float) and math.isnan(vol)) else int(vol)
-        rows[ts.date()] = (
-            ticker, ts.date(),
+        rows[day] = (
+            ticker, day,
             _num(r.get("Open")), _num(r.get("High")), _num(r.get("Low")),
-            close, _num(r.get("Adj Close")), vol,
+            close, adj, vol,
         )
     return rows
 
@@ -51,16 +74,18 @@ def _to_rows(ticker: str, df) -> dict:
 def fetch_rows(ticker: str, start: date, retries: int = 3) -> list[tuple]:
     """Download daily bars from `start` up to and including today.
 
-    Two safeguards against a missing latest day:
-    1. an explicit `end` two days ahead (Yahoo's end date is exclusive), so today's bar is
-       always inside the requested range whatever the server's time zone is;
-    2. a second request for the last 5 days (a different Yahoo code path), merged in,
-       which picks up the newest bar when the date-range query lags behind."""
+    Safeguards against a missing latest day:
+    1. an explicit `end` two days ahead (Yahoo's end date is exclusive);
+    2. if Yahoo's newest candle has no close yet, the close is taken from the live quote
+       for that same session (and replaced by the final value on the next run);
+    3. a second request for the last 5 days, merged in, in case the date-range query lags."""
     end = date.today() + timedelta(days=2)
-    rows = _to_rows(ticker, _history(ticker, retries, start=start.isoformat(), end=end.isoformat()))
+    df, meta = _history(ticker, retries, start=start.isoformat(), end=end.isoformat())
+    rows = _to_rows(ticker, df, meta)
     if (date.today() - start).days <= 31:          # daily runs only, not the 11-year backfill
         try:
-            for d, row in _to_rows(ticker, _history(ticker, retries, period="5d")).items():
+            df5, meta5 = _history(ticker, retries, period="5d")
+            for d, row in _to_rows(ticker, df5, meta5).items():
                 rows.setdefault(d, row)
         except Exception:
             pass                                    # the main request already succeeded
