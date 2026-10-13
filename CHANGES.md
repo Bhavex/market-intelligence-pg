@@ -2,12 +2,12 @@
 
 Branch `feat/52w-signals-and-data-quality` (not merged, not pushed). Written 13 Oct 2026, 23:30 IST.
 
-> **Read this first: nothing here has been run on the production Neon database yet.**
-> `DATABASE_URL` is only stored as a GitHub Actions secret and was not available where this work was done. Everything
-> was built and tested on a **local PostgreSQL replica** with the same schema and the same 72,725 price rows
-> (loaded from Yahoo with the repo's own `backfill.py`). The MARUTI / data-quality findings below come from
-> **GitHub Actions logs, Yahoo, NSE's official bhavcopy files and the published dashboard export** (which is generated
-> from production), not from direct queries. The exact steps to apply and re-verify on production are in section 7.
+> **Read this first: this work was applied to the production Neon database on 14 Oct 2026 at about 00:40 IST, from this
+> branch, run locally (not merged, not pushed). The real production results are in section 9.**
+> It was first built and tested on a **local PostgreSQL replica** with the same schema and the same 72,725 price rows
+> (loaded from Yahoo with the repo's own `backfill.py`). Sections 2 to 8 were written *before* the production run, so
+> their numbers are predictions from the replica, the GitHub Actions logs, Yahoo, NSE's bhavcopy and the dashboard export.
+> Where production turned out different, section 9 says so. **One production row is still wrong: INFY.NS on 13 Oct (open item, section 9).**
 
 ## 1. Summary for Adya
 
@@ -196,3 +196,61 @@ The first run after the merge computes the 52-week columns for ~66k rows (about 
 2. **12 Oct volume/OHLC**: the hourly fallback is only approximate. Using NSE's bhavcopy as the gap source (it is available and has the official OHLC and volume) would fix it properly; I did not add a second data source without your say-so.
 3. **`mv_sector_daily`** does not include the new columns; rebuilding it needs DROP + CREATE + re-grant. Left as is.
 4. `pipeline_runs.rows_upserted` now means rows *actually written* (it used to count rows submitted); the breakdown is in `message`.
+
+## 9. What actually happened on production (14 Oct 2026, 00:30 - 00:45 IST)
+
+Applied locally from this branch with `DATABASE_URL` from the environment, in this order: `setup_db.py`, `daily_update.py`,
+`dq_audit.py`, `verify_52w.py`, then the after-snapshot. **`post_load.py` was NOT run and `mv_sector_daily` was not touched**
+(still 10 columns, 14,545 rows, latest date 13 Oct). Raw outputs are kept locally in `before_prod/` and `after_prod/` (not committed).
+
+**Surprise: the 13 Oct correction had already happened.** A scheduled/manual `daily_update` (pipeline run 16, **23:59 - 00:00 IST**, old code)
+ran after the section 4/5 audit and rewrote 24 of the 25 rows for 13 Oct (`audit_log` has 24 UPDATE rows from it, e.g. MARUTI close
+11,320 -> 11,245). So at the start of my session production already held NSE's official closes for 24 tickers, and the "16 tickers more
+than 0.5% off" were already fixed except one. Those rows come from Yahoo's hourly bars (Yahoo's daily bar for 13 Oct had no close at that time):
+the **close is right, but open/high/low/volume are approximate** (MARUTI 13 Oct volume 595,234 vs NSE 761,548).
+
+**Steps and results**
+
+| Step | Result |
+|---|---|
+| Connection (read-only) | OK; `neondb`, 72,725 `daily_prices` rows, 72,725 `signals`, latest date 13 Oct |
+| `setup_db.py` | OK. `signals` has `high_52w`, `breakout_52w`, `pct_from_52w_high`, `strong_breakout`; `v_sector_daily` has 12 columns, first 10 unchanged |
+| `daily_update.py` (run 18, success) | **0 inserted, 25 updated, 100 unchanged, 0 held back, 0 failed tickers.** All 25 updates are **12 Oct** rows: close unchanged, open/high/low/volume replaced by the official values (Yahoo now has a 12 Oct daily bar). 125 signal rows refreshed, 66,425 signal rows now have 52-week values. `audit_log` 24 -> 49 rows |
+| `verify_52w.py` | **ALL CHECKS PASSED** (10/10 SQL checks, 0 mismatches vs pandas for ICICIBANK / MARUTI / TCS, 25/25 tickers with exactly 252 leading NULLs) |
+| `dq_audit.py` | **FAIL, 1 error: INFY.NS 13 Oct** (see open item). Everything else clean: `PRICE_DIFF` 0 (was 0 before my run), `VOLUME_DIFF` 25 -> **0** (the 12 Oct volume gap is closed), `MISSING_DAY` 0, `NOT_TRADING_DAY` 0. Warnings: `STALE_CLOSE` 1 (SUNPHARMA 12 Oct, real), `NO_YAHOO_DAILY` 25 (all 13 Oct, Yahoo daily had no close yet) |
+| Adya's 3a / 3b / 3c / 5, before vs after my run | **Identical** (60 + 5 + 5 + 141 rows), because my run only changed 12 Oct open/high/low/volume, not any close, and the 13 Oct closes were fixed earlier by run 16 |
+| Breakouts on 13 Oct | 0 in every sector. Breakout stock-days per sector per year are identical to the replica table in section 3 (2026: 35 / 31 / 18 / 4 / 53 = 141) |
+
+**MARUTI.NS** (production, before my run -> after):
+
+| | Open | High | Low | Close | Volume |
+|---|---|---|---|---|---|
+| 12 Oct, before | 11,437 | 11,510 | 11,275 | 11,315 | 268,006 |
+| 12 Oct, after (= NSE) | **11,420** | **11,519** | 11,275 | 11,315 | **323,997** |
+| 13 Oct, before = after | 11,318 | 11,325 | 11,130 | **11,245** (NSE 11,245) | 595,234 (NSE 761,548) |
+
+The 13 Oct close was 11,320 at the start of the day (intraday, 09:39 IST) and was corrected to 11,245 by run 16, not by me.
+
+**The 16 tickers that were more than 0.5% off** (13 Oct close): at the start of my session **15 of 16 already equal NSE's official close**
+(HCLTECH 1,326.00, TECHM 1,543.50, TCS 2,269.30, WIPRO 169.00, HINDUNILVR 1,875.50, NESTLEIND 1,334.00, BAJAJ-AUTO 10,318.00, ICICIBANK 1,360.20,
+M&M 2,864.40, SBIN 957.00, AXISBANK 1,268.40, CIPLA 1,329.60, MARUTI 11,245.00, DRREDDY 1,240.00, ITC 261.00; checked with the stored value after my run: all 0.00% off).
+**INFY.NS is the 16th and is still wrong** (below). The other 8 of the 24 stale rows (DABUR, HEROMOTOCO, KOTAKBANK, EICHERMOT, BRITANNIA, LUPIN, SUNPHARMA, DIVISLAB) were also fixed by run 16; HDFCBANK was never wrong.
+
+**Adya's numbers on production now** (same as before my run):
+
+| Report item | Report (stale 13 Oct) | Production now | Replica prediction (all 25 fixed) |
+|---|---|---|---|
+| 2026 YTD Pharma (strongest) | +5.04% | **+5.39%** | +5.39% |
+| 2026 YTD Banking / Auto / FMCG | -5.44 / -11.63 / -17.88% | -4.95 / -11.19 / -17.73% | same |
+| 2026 YTD IT (weakest) | -24.28% | **-22.30%** | -21.87% |
+| Annual volatility Banking / IT | 22.33% / 21.10% | 22.34% / 21.14% | 22.34% / 21.15% |
+| Correlation IT-FMCG | 0.348 | 0.349 | 0.349 |
+| Backtest final: strategy / equal-weight | Rs 461.45 / 415.91 | **Rs 462.98 / 419.42** | 462.98 / 419.91 |
+| Oct 2026 month: strategy / equal-weight | -1.71% / -0.14% | -1.38% / +0.70% | -1.38% / +0.82% |
+
+Rankings are unchanged. The only gaps to the prediction are IT YTD (0.43 pt), IT volatility (0.01 pt), and the equal-weight line (Rs 0.49, 0.12 pt in Oct), and they are all explained by INFY's wrong 13 Oct close. They will move to the prediction once INFY is fixed.
+
+**OPEN ITEM: INFY.NS on 13 Oct.** Stored close 1,032.05 (intraday, written 09:40 IST), NSE official 1,062.10 (-2.83%). Run 16 did not replace this row (cause not investigated: most likely the hourly rebuild gave nothing for INFY), and Yahoo's daily series had no close for 13 Oct at 00:40 IST, so nothing replaced it. The new pipeline only uses hourly
+rows to fill *missing* days (insert-only), so it cannot overwrite this row either; it will be replaced the next time Yahoo's daily bar for 13 Oct has a close
+(the 5-session re-upsert window still covers 13 Oct for about 4 more trading days, so re-run within that time). **Not edited by hand, by decision.** To close it: re-run "Daily market update" (or `daily_update.py`) once Yahoo has published the 13 Oct daily bars, then re-run `dq_audit.py` (expect PASS) and `adya_snapshot.py` (IT YTD should move to about -21.87%, equal-weight final to about Rs 419.9). The same re-run will replace the approximate 13 Oct open/high/low/volume of the other 24 tickers with the official values.
+The 13 Oct volume of all 25 tickers is also approximate until then, which affects `volume_zscore_20d` and `strong_breakout` on 13 Oct (no breakouts that day, so no count changes).
