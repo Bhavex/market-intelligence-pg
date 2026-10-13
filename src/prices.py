@@ -30,7 +30,11 @@ def _history(ticker: str, retries: int = 3, **kwargs):
         try:
             t = yf.Ticker(ticker)
             df = t.history(interval="1d", auto_adjust=False, actions=False, **kwargs)
-            return df, (t.history_metadata or {})
+            try:
+                meta = t.history_metadata or {}
+            except Exception:
+                meta = {}
+            return df, meta
         except Exception:
             if attempt == retries:
                 raise
@@ -41,12 +45,17 @@ def _session_close(meta, day):
     """Yahoo often leaves the newest daily candle's close empty for NSE stocks until its
     overnight batch runs, while the quote (regularMarketPrice) already has the closing price.
     Use that price, but only if the quote belongs to the same trading day."""
-    price, ts = meta.get("regularMarketPrice"), meta.get("regularMarketTime")
-    if not price or not ts:
-        return None
-    if datetime.fromtimestamp(ts, IST).date() != day:
-        return None
-    return _num(price)
+    try:
+        price, ts = meta.get("regularMarketPrice"), meta.get("regularMarketTime")
+        if not price or ts is None:
+            return None
+        if isinstance(ts, (int, float)):           # raw Unix seconds
+            quote_day = datetime.fromtimestamp(ts, IST).date()
+        else:                                      # newer yfinance: pandas Timestamp / datetime
+            quote_day = ts.astimezone(IST).date()
+        return _num(price) if quote_day == day else None
+    except Exception:
+        return None                                # never let the fallback break a normal load
 
 
 def _to_rows(ticker: str, df, meta=None) -> dict:
