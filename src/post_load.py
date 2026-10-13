@@ -18,6 +18,14 @@ CHECKS = [
     ("freshness", "error" if STRICT else "warn",
      "SELECT COUNT(*) FROM v_data_freshness WHERE NOT is_fresh OR latest_price_date IS NULL",
      "Stocks missing the latest trading day (from the NSE holiday calendar)"),
+    ("calendar_gaps_30d", "error" if STRICT else "warn",
+     """SELECT COUNT(*)
+        FROM generate_series(CURRENT_DATE - 30, expected_latest_trading_day(), INTERVAL '1 day') AS g(day)
+        CROSS JOIN companies c
+        WHERE c.is_active AND is_trading_day(g.day::date)
+          AND NOT EXISTS (SELECT 1 FROM daily_prices p
+                          WHERE p.ticker = c.ticker AND p.price_date = g.day::date)""",
+     "Trading days in the last 30 (per NSE calendar) with no price row for a stock"),
     ("non_positive_prices", "error",
      "SELECT COUNT(*) FROM daily_prices WHERE close <= 0 OR open <= 0 OR high <= 0 OR low <= 0",
      "Prices that are zero or negative"),

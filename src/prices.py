@@ -25,79 +25,75 @@ def _num(x):
 
 
 def _history(ticker: str, retries: int = 3, **kwargs):
-    """Returns (dataframe, metadata). Metadata holds Yahoo's live quote for the latest session."""
     for attempt in range(1, retries + 1):
         try:
-            t = yf.Ticker(ticker)
-            df = t.history(interval="1d", auto_adjust=False, actions=False, **kwargs)
-            try:
-                meta = t.history_metadata or {}
-            except Exception:
-                meta = {}
-            return df, meta
+            return yf.Ticker(ticker).history(auto_adjust=False, actions=False, **kwargs)
         except Exception:
             if attempt == retries:
                 raise
             time.sleep(2 * attempt)
 
 
-def _session_close(meta, day):
-    """Yahoo often leaves the newest daily candle's close empty for NSE stocks until its
-    overnight batch runs, while the quote (regularMarketPrice) already has the closing price.
-    Use that price, but only if the quote belongs to the same trading day."""
-    try:
-        price, ts = meta.get("regularMarketPrice"), meta.get("regularMarketTime")
-        if not price or ts is None:
-            return None
-        if isinstance(ts, (int, float)):           # raw Unix seconds
-            quote_day = datetime.fromtimestamp(ts, IST).date()
-        else:                                      # newer yfinance: pandas Timestamp / datetime
-            quote_day = ts.astimezone(IST).date()
-        return _num(price) if quote_day == day else None
-    except Exception:
-        return None                                # never let the fallback break a normal load
+def _session_finished(day: date) -> bool:
+    """A day's bar is final only after the NSE close (3:30 PM IST) plus a buffer."""
+    now = datetime.now(IST)
+    return day < now.date() or (day == now.date() and now.hour >= 16)
 
 
-def _to_rows(ticker: str, df, meta=None) -> dict:
+def _to_rows(ticker: str, df) -> dict:
     rows = {}
-    last_day = df.index[-1].date() if len(df) else None
     for ts, r in df.iterrows():
         day = ts.date()
         close = _num(r.get("Close"))
-        adj = _num(r.get("Adj Close"))
-        if close is None and day == last_day and meta:
-            close = _session_close(meta, day)      # fill the newest day from the live quote
-            adj = adj or close                     # tomorrow's run overwrites with Yahoo's final values
-        if close is None or close <= 0:
-            continue                               # no usable price for this day
+        if close is None or close <= 0 or not _session_finished(day):
+            continue                               # empty bar, or market still open
         vol = r.get("Volume")
         vol = None if vol is None or (isinstance(vol, float) and math.isnan(vol)) else int(vol)
-        rows[day] = (
-            ticker, day,
-            _num(r.get("Open")), _num(r.get("High")), _num(r.get("Low")),
-            close, adj, vol,
-        )
+        adj = _num(r.get("Adj Close")) or close
+        rows[day] = (ticker, day, _num(r.get("Open")), _num(r.get("High")), _num(r.get("Low")),
+                     close, adj, vol)
+    return rows
+
+
+def _rows_from_hourly(ticker: str, df) -> dict:
+    """Rebuild daily bars from hourly bars: first open, max high, min low, last close, total volume.
+    Yahoo sometimes leaves an NSE daily candle empty for days while its hourly bars are complete."""
+    rows = {}
+    df = df.dropna(subset=["Close"])
+    for day, g in df.groupby(df.index.date):
+        if not _session_finished(day) or g.empty:
+            continue
+        close = _num(g["Close"].iloc[-1])
+        if close is None or close <= 0:
+            continue
+        rows[day] = (ticker, day, _num(g["Open"].iloc[0]), _num(g["High"].max()),
+                     _num(g["Low"].min()), close, close, int(g["Volume"].fillna(0).sum()))
     return rows
 
 
 def fetch_rows(ticker: str, start: date, retries: int = 3) -> list[tuple]:
-    """Download daily bars from `start` up to and including today.
+    """Download daily bars from `start` up to the last finished session.
 
-    Safeguards against a missing latest day:
+    Safeguards so no trading day is silently missed:
     1. an explicit `end` two days ahead (Yahoo's end date is exclusive);
-    2. if Yahoo's newest candle has no close yet, the close is taken from the live quote
-       for that same session (and replaced by the final value on the next run);
-    3. a second request for the last 5 days, merged in, in case the date-range query lags."""
-    end = date.today() + timedelta(days=2)
-    df, meta = _history(ticker, retries, start=start.isoformat(), end=end.isoformat())
-    rows = _to_rows(ticker, df, meta)
-    if (date.today() - start).days <= 31:          # daily runs only, not the 11-year backfill
+    2. today's bar is skipped until the market has closed (no half-day prices);
+    3. for recent days (last 30), any weekday Yahoo's daily data lacks or leaves empty is
+       rebuilt from Yahoo's hourly bars (holidays have no hourly bars, so they stay empty)."""
+    end = datetime.now(IST).date() + timedelta(days=2)
+    df = _history(ticker, retries, interval="1d", start=start.isoformat(), end=end.isoformat())
+    rows = _to_rows(ticker, df)
+
+    recent_start = max(start, datetime.now(IST).date() - timedelta(days=30))
+    wanted = {recent_start + timedelta(days=i) for i in range((datetime.now(IST).date() - recent_start).days + 1)}
+    gaps = {d for d in wanted if d.weekday() < 5 and d not in rows and _session_finished(d)}
+    if gaps:
         try:
-            df5, meta5 = _history(ticker, retries, period="5d")
-            for d, row in _to_rows(ticker, df5, meta5).items():
-                rows.setdefault(d, row)
+            hourly = _history(ticker, retries, interval="1h", period="1mo")
+            for d, row in _rows_from_hourly(ticker, hourly).items():
+                if d in gaps:
+                    rows[d] = row
         except Exception:
-            pass                                    # the main request already succeeded
+            pass                                    # daily data already loaded; strict check will flag gaps
     return [rows[d] for d in sorted(rows)]
 
 
