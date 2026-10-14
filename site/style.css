@@ -139,49 +139,12 @@ select:hover, input[type="search"]:hover { border-color: var(--muted); }
 .stat .value { font-size: 17px; font-weight: 600; }
 
 /* ---------- map ---------- */
-#map { position: relative; height: 480px; border-radius: 12px; border: 1px solid var(--border); background: var(--grid); overflow: hidden; }
-#map.map-active { box-shadow: 0 0 0 2px var(--accent); }
-.leaflet-container { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-.city-pin { background: none; border: 0; }
-.pin-ring { width: 100%; height: 100%; border-radius: 50%; padding: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.25), 0 0 0 2px var(--surface);
-  transition: transform .15s ease; }
-.city-pin:hover .pin-ring, .city-pin:focus .pin-ring { transform: scale(1.12); }
-.pin-core { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px;
-  box-shadow: inset 0 0 0 2px var(--surface); }
+#map { height: 460px; border-radius: 10px; border: 1px solid var(--border); position: relative; }
 .map-hint { position: absolute; inset: 0; z-index: 800; display: grid; place-items: center; pointer-events: none;
-  background: rgba(11,11,11,.45); color: #fff; font-size: 15px; font-weight: 600; opacity: 0; transition: opacity .2s; }
+  background: rgba(11, 11, 11, 0.45); color: #fff; font-size: 15px; font-weight: 600; opacity: 0; transition: opacity .2s; }
 .map-hint.show { opacity: 1; }
-.map-reset { width: 30px; height: 30px; line-height: 30px; text-align: center; font-size: 17px; text-decoration: none; }
-.map-legend { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.12); min-width: 170px; font-size: 12px; }
-details.map-legend { border-bottom: 1px solid var(--border); padding: 8px 10px; }
-.map-legend summary { display: block; padding: 0; font-size: 12px; font-weight: 600; }
-.map-legend summary::after, .map-legend[open] summary::after { content: none; }
-.map-legend summary::before { content: "▸ "; color: var(--ink-2); }
-.map-legend[open] summary::before { content: "▾ "; }
-.map-legend[open] summary { margin-bottom: 6px; }
-.lg-title { color: var(--ink-2); margin: 2px 0 4px; }
-.lg-title + .lg-title, .lg-ticks + .lg-title { margin-top: 8px; }
-.lg-bar { height: 8px; border-radius: 4px; }
-.lg-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
-.lg-sectors { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.lg-sectors i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }
-.leaflet-popup-content { margin: 12px 14px; min-width: 220px; }
-.pop-head { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
-.pop-head span { color: var(--ink-2); font-size: 12px; }
-.pop-sum { color: var(--ink-2); margin: 2px 0 8px; }
-.pop-tbl { width: 100%; border-collapse: collapse; }
-.pop { max-height: 300px; overflow-y: auto; padding-right: 2px; }
-.pop-tbl td { padding: 3px 0; border-top: 1px solid var(--border); }
-.pop-tbl td.num { text-align: right; padding-left: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pop-link { display: inline-block; margin-top: 8px; }
-.pop-city { font-weight: 600; margin: 8px 0 2px; }
-.leaflet-bar a, .leaflet-bar a:hover { background: var(--surface); color: var(--ink); border-color: var(--border); }
-.leaflet-bar { border: 1px solid var(--border) !important; box-shadow: 0 1px 4px rgba(0,0,0,.12) !important; }
-.leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 80%, transparent) !important; color: var(--ink-2); }
-.leaflet-tooltip { background: var(--surface); color: var(--ink); border-color: var(--border); }
-@media (max-width: 600px) { #map { height: 380px; } .map-legend { min-width: 0; font-size: 11px; } }
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6); }
+.leaflet-popup-content { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 
 /* ---------- how it works ---------- */
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 860px; }
