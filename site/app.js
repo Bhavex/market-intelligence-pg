@@ -217,25 +217,133 @@
       const k = r.city_name;
       (cities[k] ||= { city: r.city_name, state: r.state, lat: r.latitude, lon: r.longitude, cos: [] }).cos.push(r);
     });
-    const map = L.map("map", { scrollWheelZoom: false }).setView([22.5, 79], 5);
-    // OpenStreetMap's free standard tiles (no API key). In dark mode they're darkened with a CSS filter.
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 10,
-      className: dark ? "tiles-dark" : "",
-    }).addTo(map);
-    map.fitBounds(L.latLngBounds(Object.values(cities).map((c) => [c.lat, c.lon])).pad(0.25));
-    Object.values(cities).forEach((c) => {
-      const avg = c.cos.reduce((a, r) => a + (r.momentum_20d || 0), 0) / c.cos.length;
-      const fill = diverge(avg, 0.08).bg;
-      L.circleMarker([c.lat, c.lon], {
-        radius: 7 + 4 * Math.sqrt(c.cos.length), color: css("--surface"), weight: 2, fillColor: fill, fillOpacity: 0.9,
-      }).addTo(map).bindPopup(
-        `<strong>${esc(c.city)}, ${esc(c.state)}</strong><br>${c.cos.length} compan${c.cos.length > 1 ? "ies" : "y"} · avg 1-month ${sign(avg)}<br>` +
-        c.cos.map((r) => `${esc(r.company_name)} (${esc(r.sector_name)}): <span class="${cls(r.momentum_20d)}">${sign(r.momentum_20d)}</span>`).join("<br>") +
-        `<br><a href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lon}" target="_blank" rel="noopener">Directions to ${esc(c.city)} ↗</a>`
-      ).bindTooltip(`${c.city}: ${c.cos.length}`, { direction: "top" });
+    const list = Object.values(cities);
+    const bounds = L.latLngBounds(list.map((c) => [c.lat, c.lon])).pad(0.25);
+
+    const el = document.getElementById("map");
+    const map = L.map(el, {
+      scrollWheelZoom: true,          // gated below: pinch always zooms, two-finger scroll zooms once the map is active
+      zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, wheelDebounceTime: 25,
+      minZoom: 4, maxZoom: 11, maxBounds: L.latLngBounds([0, 60], [40, 100]), maxBoundsViscosity: 0.8,
+      zoomControl: false, attributionControl: true,
     });
+    L.control.zoom({ position: "topright" }).addTo(map);
+    // CARTO basemaps (free, no key, OpenStreetMap data): quiet greys so the data bubbles stand out; a true dark style in dark mode.
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd", maxZoom: 19,
+    }).addTo(map);
+    map.fitBounds(bounds);
+
+    // ---- trackpad / mouse-wheel zoom without hijacking page scroll ----
+    // Pinch on a trackpad arrives as a wheel event with ctrlKey = true: always zoom.
+    // A plain scroll zooms only after the map is clicked or focused; otherwise the page scrolls and a hint appears.
+    let active = false, hintTimer;
+    const hint = L.DomUtil.create("div", "map-hint", el);
+    hint.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "Pinch to zoom, or click the map to zoom by scrolling" : "Ctrl + scroll to zoom, or click the map to zoom by scrolling";
+    const setActive = (on) => { active = on; el.classList.toggle("map-active", on); };
+    el.addEventListener("wheel", (e) => {
+      if (active || e.ctrlKey) return;            // let Leaflet zoom
+      e.stopPropagation();                        // keep Leaflet from zooming; the page scrolls as normal
+      hint.classList.add("show"); clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => hint.classList.remove("show"), 1400);
+    }, { capture: true });
+    map.on("click focus", () => { setActive(true); hint.classList.remove("show"); });
+    el.addEventListener("mouseleave", () => setActive(false));
+    map.on("blur", () => setActive(false));
+
+    // ---- reset view ----
+    const Reset = L.Control.extend({
+      options: { position: "topright" },
+      onAdd() {
+        const b = L.DomUtil.create("a", "leaflet-bar map-reset");
+        b.href = "#"; b.title = "Reset view"; b.setAttribute("role", "button"); b.setAttribute("aria-label", "Reset map view");
+        b.innerHTML = "&#8634;";
+        L.DomEvent.on(b, "click", (e) => { L.DomEvent.preventDefault(e); L.DomEvent.stopPropagation(e); map.flyToBounds(bounds, { duration: 0.6 }); });
+        return b;
+      },
+    });
+    map.addControl(new Reset());
+
+    // ---- bubbles: ring = sector mix, centre = average 20-day momentum, number = companies ----
+    const ring = (cos) => {
+      let at = 0;
+      const stops = SECTORS.map((s) => {
+        const n = cos.filter((r) => r.sector_name === s).length;
+        if (!n) return null;
+        const from = at; at += (n / cos.length) * 360;
+        return `${color(s)} ${from}deg ${at}deg`;
+      }).filter(Boolean);
+      return `conic-gradient(${stops.join(",")})`;
+    };
+    // Nearby cities (Mumbai + Pune, the four Delhi-NCR cities) would sit on top of each other at country zoom,
+    // so bubbles that overlap on screen are merged and split again as you zoom in.
+    const sizeOf = (n) => Math.round(22 + 8 * Math.sqrt(n));
+    const avgMom = (cos) => cos.reduce((a, r) => a + (r.momentum_20d || 0), 0) / cos.length;
+    const layer = L.layerGroup().addTo(map);
+    const draw = () => {
+      layer.clearLayers();
+      const groups = [];
+      [...list].sort((a, b) => b.cos.length - a.cos.length).forEach((c) => {
+        const pt = map.latLngToContainerPoint([c.lat, c.lon]);
+        const g = groups.find((g) => g.pt.distanceTo(pt) < (sizeOf(g.n) + sizeOf(c.cos.length)) / 2 + 4);
+        if (g) { g.cities.push(c); g.n += c.cos.length; } else groups.push({ pt, cities: [c], n: c.cos.length });
+      });
+      groups.forEach((g) => {
+        const cos = g.cities.flatMap((c) => c.cos), lead = g.cities[0], merged = g.cities.length > 1;
+        const lat = g.cities.reduce((a, c) => a + c.lat * c.cos.length, 0) / g.n;
+        const lon = g.cities.reduce((a, c) => a + c.lon * c.cos.length, 0) / g.n;
+        const avg = avgMom(cos), fill = diverge(avg, 0.08), size = sizeOf(g.n);
+        const name = merged ? `${lead.city} + ${g.cities.length - 1} nearby` : lead.city;
+        const icon = L.divIcon({
+          className: "city-pin" + (merged ? " merged" : ""), iconSize: [size, size],
+          html: `<div class="pin-ring" style="background:${ring(cos)}"><div class="pin-core" style="background:${fill.bg};color:${fill.fg}">${g.n}</div></div>`,
+        });
+        const rowsHtml = (cs) => SECTORS.flatMap((s) => cs.filter((r) => r.sector_name === s)).map((r) =>
+          `<tr><td><span class="swatch" style="background:${color(r.sector_name)}"></span>${esc(r.company_name)}</td>` +
+          `<td class="num ${cls(r.momentum_20d)}">${sign(r.momentum_20d)}</td></tr>`).join("");
+        const popup = merged
+          ? `<div class="pop"><div class="pop-head"><strong>${esc(name)}</strong></div>` +
+            `<div class="pop-sum">${g.n} companies · avg 20-day momentum <b class="${cls(avg)}">${sign(avg)}</b></div>` +
+            g.cities.map((c) => `<div class="pop-city">${esc(c.city)}, ${esc(c.state)}</div><table class="pop-tbl">${rowsHtml(c.cos)}</table>`).join("") +
+            `<div class="pop-sum" style="margin-top:8px">Zoom in to separate the cities.</div></div>`
+          : `<div class="pop"><div class="pop-head"><strong>${esc(lead.city)}</strong><span>${esc(lead.state)}</span></div>` +
+            `<div class="pop-sum">${g.n} compan${g.n > 1 ? "ies" : "y"} · avg 20-day momentum <b class="${cls(avg)}">${sign(avg)}</b></div>` +
+            `<table class="pop-tbl">${rowsHtml(cos)}</table>` +
+            `<a class="pop-link" href="https://www.google.com/maps/dir/?api=1&destination=${lead.lat},${lead.lon}" target="_blank" rel="noopener">Directions to ${esc(lead.city)} ↗</a></div>`;
+        const m = L.marker([lat, lon], { icon, riseOnHover: true, keyboard: true, zIndexOffset: -100 * g.n, title: `${name}: ${g.n} compan${g.n > 1 ? "ies" : "y"}` })
+          .addTo(layer)
+          .bindTooltip(`<b>${esc(name)}</b> · ${g.n} · ${sign(avg)}${merged ? "<br>Click to zoom in" : ""}`, { direction: "top", offset: [0, -size / 2] });
+        if (merged) {
+          // a merged bubble zooms in until its cities separate
+          m.on("click", () => { setActive(true); map.flyToBounds(L.latLngBounds(g.cities.map((c) => [c.lat, c.lon])).pad(0.6), { maxZoom: 10, duration: 0.6 }); });
+        } else {
+          m.bindPopup(popup, { maxWidth: 300, autoPanPadding: [24, 24] }).on("click", () => setActive(true));
+        }
+      });
+    };
+    draw();
+    map.on("zoomend", draw);
+
+    // ---- legend ----
+    const Legend = L.Control.extend({
+      options: { position: "bottomleft" },
+      onAdd() {
+        const d = L.DomUtil.create("details", "map-legend");
+        if (matchMedia("(min-width: 601px)").matches) d.open = true;
+        const g = [-0.08, -0.04, 0, 0.04, 0.08].map((v) => diverge(v, 0.08).bg).join(",");
+        d.innerHTML =
+          `<summary>Legend</summary>` +
+          `<div class="lg-title">20-day momentum (centre)</div>` +
+          `<div class="lg-bar" style="background:linear-gradient(90deg,${g})"></div>` +
+          `<div class="lg-ticks"><span>−8%</span><span>0</span><span>+8%</span></div>` +
+          `<div class="lg-title">Sector mix (ring)</div>` +
+          `<div class="lg-sectors">${SECTORS.map((s) => `<span><i style="background:${color(s)}"></i>${s}</span>`).join("")}</div>`;
+        L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+        return d;
+      },
+    });
+    map.addControl(new Legend());
   }
 
   function renderAnomalies(rows) {

@@ -35,7 +35,7 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body class="loading">
@@ -131,7 +131,7 @@
   <section class="card" id="map-section">
     <div class="card-head">
       <h2>Where the companies are headquartered</h2>
-      <p class="note">Circle size = number of companies · colour = average 20-day momentum (blue up, red down). Click a circle for details and directions.</p>
+      <p class="note">Number = companies in the city · ring = sector mix · centre colour = average 20-day momentum (blue up, red down). Pinch or Ctrl + scroll to zoom; click a city for details.</p>
     </div>
     <div id="map" role="img" aria-label="Map of India showing company headquarters"></div>
   </section>
@@ -215,6 +215,6 @@ ORDER BY strength_rank;</code></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
