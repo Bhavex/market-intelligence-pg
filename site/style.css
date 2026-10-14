@@ -139,7 +139,10 @@ select:hover, input[type="search"]:hover { border-color: var(--muted); }
 .stat .value { font-size: 17px; font-weight: 600; }
 
 /* ---------- map ---------- */
-#map { height: 460px; border-radius: 10px; border: 1px solid var(--border); }
+#map { height: 460px; border-radius: 10px; border: 1px solid var(--border); position: relative; }
+.map-hint { position: absolute; inset: 0; z-index: 800; display: grid; place-items: center; pointer-events: none;
+  background: rgba(11, 11, 11, 0.45); color: #fff; font-size: 15px; font-weight: 600; opacity: 0; transition: opacity .2s; }
+.map-hint.show { opacity: 1; }
 .tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6); }
 .leaflet-popup-content { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 

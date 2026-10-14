@@ -217,7 +217,24 @@
       const k = r.city_name;
       (cities[k] ||= { city: r.city_name, state: r.state, lat: r.latitude, lon: r.longitude, cos: [] }).cos.push(r);
     });
-    const map = L.map("map", { scrollWheelZoom: false }).setView([22.5, 79], 5);
+    const el = document.getElementById("map");
+    const map = L.map(el, {
+      scrollWheelZoom: true,          // gated below so the page still scrolls normally
+      zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, wheelDebounceTime: 25,
+    }).setView([22.5, 79], 5);
+    // Trackpad pinch arrives as a wheel event with ctrlKey = true, so it always zooms (Ctrl + scroll on a mouse too).
+    // A plain two-finger scroll zooms only after the map is clicked; otherwise the page scrolls and a hint appears.
+    let active = false, hintTimer;
+    const hint = L.DomUtil.create("div", "map-hint", el);
+    hint.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "Pinch to zoom, or click the map to zoom by scrolling" : "Ctrl + scroll to zoom, or click the map to zoom by scrolling";
+    el.addEventListener("wheel", (e) => {
+      if (active || e.ctrlKey) return;            // let Leaflet zoom
+      e.stopPropagation();                        // keep Leaflet from zooming; the page scrolls as normal
+      hint.classList.add("show"); clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => hint.classList.remove("show"), 1400);
+    }, { capture: true });
+    map.on("click", () => { active = true; hint.classList.remove("show"); });
+    el.addEventListener("mouseleave", () => { active = false; });
     // OpenStreetMap's free standard tiles (no API key). In dark mode they're darkened with a CSS filter.
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
