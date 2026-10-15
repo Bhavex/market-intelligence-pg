@@ -34,6 +34,7 @@ flowchart LR
 - **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
 - **Security:** least-privilege read-only role for analysts and Power BI; secrets only in GitHub Actions
 - **Sector-rotation backtest** (2015 to today) on the live dashboard
+- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal → [docs/TRUST.md](docs/TRUST.md)
 
 ## DBMS concepts used
 
@@ -49,6 +50,9 @@ flowchart LR
 | Roles & privileges | `readonly_access` role in `sql/05_audit_and_procedures.sql` |
 | Transactions, savepoints, isolation levels | `demo/transactions_demo.sql` |
 | Query optimisation (`EXPLAIN ANALYZE`), partitioning | `src/benchmark.py` → [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
+| Temporal (bitemporal / system-versioned) tables, exclusion constraint with GiST, time-travel queries | `sql/08_point_in_time.sql` → [docs/TRUST.md](docs/TRUST.md) |
+| Data provenance & lineage (run-level), data fusion across sources | `sql/08_point_in_time.sql`, `sql/09_reconciliation.sql` |
+| Derived quality metadata (per-row trust score) | `sql/10_trust.sql` |
 
 ## Repository layout
 
