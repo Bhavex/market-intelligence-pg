@@ -2,7 +2,7 @@ name: Publish dashboard site
 
 on:
   workflow_run:
-    workflows: ["Daily market update"]
+    workflows: ["Daily market update", "Data trust study"]
     types: [completed]
   workflow_dispatch:
 
