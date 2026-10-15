@@ -35,7 +35,7 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <link rel="stylesheet" href="hero.css?v=8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
@@ -168,6 +168,33 @@
     </div>
   </section>
 
+  <section class="card" id="trust" aria-labelledby="trustTitle">
+    <div class="card-head">
+      <h2 id="trustTitle">Can you trust free market data?</h2>
+      <p class="note">Free prices change after they are first published: a missing close is filled in later, an intraday price is stored as the close, history is rescaled after dividends. This database keeps <b>every version</b> of every price (a bitemporal table), checks Yahoo against the exchanges' official files, and measures how often each signal would give a different answer because of these errors.</p>
+    </div>
+    <div class="kpis trust-kpis" id="trustKpis">
+      <div class="kpi skeleton"></div><div class="kpi skeleton"></div><div class="kpi skeleton"></div><div class="kpi skeleton"></div>
+    </div>
+    <div class="trust-example" id="trustExample" hidden></div>
+    <div class="grid-2 wide-left">
+      <div>
+        <h3 class="sub-h">How often a data error flips a signal</h3>
+        <p class="note">Share of stock-days whose signal gives a different answer when the stored price has one of three real-world errors, simulated on every day of the full history. An intraday snapshot is exactly what this pipeline stored on 13 Oct 2026. Hover a bar for the 95% interval.</p>
+        <div class="chart-box tall"><canvas id="fragChart" role="img" aria-label="Bar chart of signal flip rates under data errors"></canvas></div>
+      </div>
+      <div>
+        <h3 class="sub-h">Revisions recorded</h3>
+        <div class="table-scroll"><table id="revTable" class="tbl"></table></div>
+        <h3 class="sub-h">Yahoo vs official exchange close</h3>
+        <div class="table-scroll"><table id="agreeTable" class="tbl"></table></div>
+      </div>
+    </div>
+    <p class="note" id="trustBacktest"></p>
+    <p class="note">Method, scenarios and limitations: <a href="https://github.com/Bhavex/market-intelligence-pg/blob/main/docs/TRUST.md" target="_blank" rel="noopener">docs/TRUST.md</a>. Try it yourself:
+      <code>SELECT * FROM prices_as_of('2026-10-13 10:00+05:30') WHERE ticker = 'INFY.NS';</code></p>
+  </section>
+
   <section class="card" id="how">
     <div class="card-head">
       <h2>How it works</h2>
@@ -176,7 +203,8 @@
     <ol class="steps">
       <li><strong>Collect.</strong> Every weekday evening (with a retry and a next-morning check), a GitHub Actions job fetches end-of-day prices for 25 stocks from Yahoo Finance and upserts them into PostgreSQL (hosted on Neon).</li>
       <li><strong>Compute in the database.</strong> A PL/pgSQL function uses window functions to calculate momentum, volatility, 50/200-day averages, RSI, volume z-scores, trend and anomaly flags for every stock and day.</li>
-      <li><strong>Check.</strong> Eight automated data-quality checks (freshness, impossible prices, missing days, signal coverage…) stop the pipeline if anything looks wrong. Triggers record every change in an audit log.</li>
+      <li><strong>Check.</strong> Nine automated data-quality checks (freshness, impossible prices, missing days, signal coverage…) stop the pipeline if anything looks wrong. Triggers record every change in an audit log.</li>
+      <li><strong>Verify.</strong> Every price change is kept as a new version with the run that caused it, so any past moment can be replayed (<code>prices_as_of()</code>). A weekly job re-downloads the full history, compares Yahoo with NSE/BSE official closes and re-measures how fragile each signal is.</li>
       <li><strong>Publish.</strong> A materialized view pre-aggregates sector data; a script exports it to static JSON and this site is rebuilt. The website never connects to the database.</li>
     </ol>
     <div class="facts" id="facts"></div>
@@ -229,6 +257,7 @@ ORDER BY strength_rank;</code></pre>
     <a href="#stocks">Stocks</a>
     <a href="#map-section">Map</a>
     <a href="#backtest">Backtest</a>
+    <a href="#trust">Trust</a>
     <a href="#how">How it works</a>
     <a href="#faq">FAQ</a>
   </div>
@@ -240,6 +269,6 @@ ORDER BY strength_rank;</code></pre>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="hero.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

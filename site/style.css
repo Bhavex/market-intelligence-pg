@@ -197,3 +197,19 @@ details p { margin: 0 4px 12px; color: var(--ink-2); max-width: 820px; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #555; }
   .chart-box.tall { height: 260px; }
 }
+
+/* ---------- data trust section ---------- */
+.sub-h { font-size: 15px; font-weight: 600; margin: 4px 0 6px; }
+.trust-kpis { margin-top: 4px; }
+.trust-example { border-left: 4px solid var(--accent); background: var(--hover); border-radius: 8px; padding: 10px 14px;
+  margin: 0 0 16px; font-size: 14.5px; line-height: 1.55; }
+#trust .grid-2 + .note { margin-top: 12px; }
+#trust code { white-space: normal; word-break: break-word; }
+#trust .grid-2 > * { min-width: 0; }               /* let the chart/tables shrink instead of overflowing */
+@media (max-width: 760px) { #trust .grid-2 { grid-template-columns: 1fr; } }
+/* very narrow phones: keep the header inside the screen */
+@media (max-width: 420px) {
+  .brand { font-size: 14px; gap: 6px; }
+  .top-meta { gap: 6px; }
+  .top-meta .btn, .top-meta .icon-btn { padding-left: 9px; padding-right: 9px; }
+}

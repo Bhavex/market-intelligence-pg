@@ -383,12 +383,121 @@
 
   function renderPipeline(rows) {
     const icon = { success: "✅", partial: "⚠️", failed: "❌", running: "⏳" };
-    const name = { daily_update: "Daily price update", data_quality: "Data-quality checks", backfill: "History backfill", fundamentals: "Fundamentals snapshot" };
+    const name = { daily_update: "Daily price update", data_quality: "Data-quality checks", backfill: "History backfill", fundamentals: "Fundamentals snapshot",
+                   official_prices: "Official exchange closes", revision_scan: "Weekly revision scan", fragility: "Signal-fragility study" };
     document.getElementById("pipeTable").innerHTML =
       `<tr><th>Job</th><th>Last finished</th><th>Status</th><th>Details</th></tr>` +
       rows.map((r) => `<tr><td>${name[r.job_name] || esc(r.job_name)}</td>
         <td>${r.finished_at ? new Date(r.finished_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "–"}</td>
         <td>${icon[r.status] || ""} ${esc(r.status)}</td><td style="white-space:normal">${esc(r.message)}</td></tr>`).join("");
+  }
+
+  // ---------- data trust (point-in-time history, official reconciliation, signal fragility) ----------
+  const KIND = {
+    intraday_as_close: "Intraday price stored as close", hourly_fill_replaced: "Hourly rebuild replaced",
+    dividend_adjustment: "Dividend back-adjustment", split_or_bonus_adjustment: "Split / bonus adjustment",
+    price_restatement: "Close restated", volume_revision: "Volume revised", ohl_revision: "Open/high/low revised",
+    deleted: "Row deleted",
+  };
+  const SIG = {
+    sector_leader: "Strongest sector", is_anomaly: "Anomaly flag", rsi_zone: "RSI zone", trend: "Trend",
+    momentum_sign: "Momentum direction", breakout_52w: "52-week breakout", strong_breakout: "Strong breakout",
+  };
+  const istTime = (s) => (s ? new Date(s).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "–");
+  load("trust.json").then(renderTrust).catch(() => {
+    const k = document.getElementById("trustKpis");
+    if (k) k.innerHTML = `<p class="note">The first weekly trust study has not run yet.</p>`;
+  });
+
+  function renderTrust(t) {
+    const kp = document.getElementById("trustKpis");
+    if (!kp || !t) return;
+    const nse = (t.agreement || []).find((r) => r.source === "NSE") || (t.agreement || [])[0];
+    const frag = (t.fragility || []).filter((r) => r.scenario === "intraday_snapshot" && r.flip_pct != null);
+    const worst = frag.slice().sort((a, b) => b.flip_pct - a.flip_pct)[0];
+    const v = t.versions || {};
+    const set = t.settlement || {};
+    const kpis = [
+      ["Price versions kept", (v.n_versions || 0).toLocaleString("en-IN"),
+        `${(v.n_superseded || 0).toLocaleString("en-IN")} were later revised`],
+      ["Yahoo matches the exchange", nse && nse.agree_pct != null ? nse.agree_pct.toFixed(2) + "%" : "–",
+        nse ? `${nse.n_compared.toLocaleString("en-IN")} closes vs ${nse.source} official file` : "waiting for the first exchange download"],
+      ["First print was final", nse && nse.first_print_agree_pct != null ? nse.first_print_agree_pct.toFixed(1) + "%" : "–",
+        set.median_first_to_final_bp != null ? `median first-print error ${Number(set.median_first_to_final_bp).toFixed(1)} bp` : "of prices captured live"],
+      ["Most fragile signal", worst ? (SIG[worst.signal] || worst.signal) : "–",
+        worst ? `flips on ${worst.flip_pct.toFixed(1)}% of days with an intraday snapshot` : "fragility study pending"],
+    ];
+    kp.innerHTML = kpis.map(([l, val, h]) =>
+      `<div class="kpi"><div class="label">${esc(l)}</div><div class="value">${esc(val)}</div><div class="hint">${esc(h)}</div></div>`).join("");
+
+    const ex = (t.example || [])[0];
+    const exBox = document.getElementById("trustExample");
+    if (ex && exBox) {
+      exBox.hidden = false;
+      exBox.innerHTML = `<b>Time travel:</b> at ${istTime(ex.old_known_from)} the database held
+        <b>${esc(ex.company_name)}</b>'s ${fmtDate(ex.price_date)} close as ₹${num(ex.old_close)}.
+        It was revised on ${istTime(ex.revised_at)} to ₹${num(ex.new_close)}
+        (${ex.close_change_bp > 0 ? "+" : ""}${num(ex.close_change_bp, 1)} bp, ${esc((KIND[ex.revision_kind] || ex.revision_kind).toLowerCase())}).
+        Both versions are kept, so either moment can be replayed.`;
+    }
+
+    const rev = t.revisions || [];
+    document.getElementById("revTable").innerHTML = rev.length
+      ? `<tr><th>Kind</th><th class="num">Revisions</th><th class="num">Median change</th></tr>` +
+        rev.map((r) => {
+          const bp = r.revision_kind === "dividend_adjustment" ? r.avg_abs_adj_change_bp : r.median_abs_close_change_bp;
+          return `<tr><td>${esc(KIND[r.revision_kind] || r.revision_kind)}</td><td class="num">${r.n_revisions.toLocaleString("en-IN")}</td>
+            <td class="num">${bp == null ? "–" : num(bp, 1) + " bp"}</td></tr>`;
+        }).join("")
+      : `<tr><td class="note">No revisions recorded yet.</td></tr>`;
+
+    const ag = t.agreement || [];
+    document.getElementById("agreeTable").innerHTML = ag.length
+      ? `<tr><th>Source</th><th class="num">Closes</th><th class="num">Agree</th><th class="num">Max gap</th></tr>` +
+        ag.map((r) => `<tr><td>${esc(r.source)}</td><td class="num">${r.n_compared.toLocaleString("en-IN")}</td>
+          <td class="num">${r.agree_pct == null ? "–" : r.agree_pct.toFixed(2) + "%"}</td><td class="num">${num(r.max_abs_diff_bp, 1)} bp</td></tr>`).join("")
+      : `<tr><td class="note" style="white-space:normal">No official exchange files downloaded yet${
+          (t.coverage || []).some((c) => c.status === "blocked") ? " (the exchanges blocked the cloud server; see docs/TRUST.md)" : ""}.</td></tr>`;
+
+    const scen = [["intraday_snapshot", "Intraday snapshot (any time)", css("--s-banking")],
+                  ["early_snapshot", "Snapshot in the first half hour", css("--s-pharma")],
+                  ["hourly_rebuild", "Close rebuilt from hourly bars", css("--s-it")]];
+    const order = ["sector_leader", "is_anomaly", "rsi_zone", "trend", "momentum_sign", "breakout_52w", "strong_breakout"];
+    const byKey = {};
+    (t.fragility || []).forEach((r) => (byKey[r.scenario + "|" + r.signal] = r));
+    const present = scen.filter(([k]) => order.some((s) => byKey[k + "|" + s]));
+    if (present.length) {
+      new Chart(document.getElementById("fragChart"), {
+        type: "bar",
+        data: {
+          labels: order.map((s) => SIG[s]),
+          datasets: present.map(([k, label, col]) => ({
+            label, backgroundColor: col, borderColor: col,
+            data: order.map((s) => (byKey[k + "|" + s] ? byKey[k + "|" + s].flip_pct : null)),
+          })),
+        },
+        options: {
+          indexAxis: "y", maintainAspectRatio: false,
+          plugins: { tooltip: { callbacks: { label: (c) => {
+            const r = byKey[present[c.datasetIndex][0] + "|" + order[c.dataIndex]];
+            if (!r || r.flip_pct == null) return "";
+            const ci = r.ci_low_pct != null && r.ci_high_pct != null ? `95%: ${r.ci_low_pct.toFixed(2)}–${r.ci_high_pct.toFixed(2)}%, ` : "";
+            return ` ${c.dataset.label}: ${r.flip_pct.toFixed(2)}% (${ci}${r.n_flipped.toLocaleString("en-IN")} of ${r.n_compared.toLocaleString("en-IN")})`;
+          } } } },
+          scales: { x: { grid: { color: css("--grid") }, ticks: { callback: (x) => x + "%" } }, y: { grid: { display: false } } },
+        },
+      });
+    }
+
+    const bt = {};
+    (t.backtest || []).forEach((r) => ((bt[r.scenario] ||= {})[r.metric] = r.value));
+    const all = bt.monthend_snapshot_100pct, base = bt.baseline;
+    if (all && base) {
+      document.getElementById("trustBacktest").innerHTML =
+        `<b>Backtest impact:</b> if every month-end price were an intraday snapshot, the rotation strategy would hold a different sector in
+         ${(all.pick_change_rate * 100).toFixed(1)}% of months, and ₹100 would end between ₹${num(all.final_value_p5, 0)} and ₹${num(all.final_value_p95, 0)}
+         (90% range; ₹${num(base.final_value_rs, 0)} with correct data).`;
+    }
   }
 
   // ---------- page UI: theme, copy, toast, progress, back-to-top ----------
