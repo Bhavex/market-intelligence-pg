@@ -8,7 +8,7 @@
 (() => {
   const SECTORS = ["IT", "Banking", "Auto", "Pharma", "FMCG"];
   const CHIPS = ["20-day momentum", "RSI 14", "52-week high", "50 / 200-day average", "Volume spike", "Anomaly flag",
-                 "Sector rotation", "Window functions", "Daily at 5 PM IST", "8 data checks"];
+                 "Sector rotation", "Window functions", "Every weekday evening", "9 data checks"];
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const sign = (v) => (v == null ? "–" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%");
