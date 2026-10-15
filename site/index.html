@@ -35,7 +35,8 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="hero.css?v=7">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body class="loading">
@@ -62,16 +63,22 @@
   </div>
 </header>
 
-<main class="wrap" id="main" tabindex="-1">
-  <section class="hero">
-    <h1>How are India's biggest sectors doing today?</h1>
-    <p class="sub">25 NSE large caps across IT, Banking, Auto, Pharma and FMCG. Prices since 2015, signals computed inside a PostgreSQL database, refreshed automatically every weekday.</p>
-    <div class="hero-row">
-      <span class="pill" id="updated">Loading data…</span>
-      <span class="pill quiet">Updated every weekday evening · re-checked next morning</span>
-      <a class="btn ghost" href="#stocks">Explore a stock ↓</a>
+<section class="hero3d" id="hero3d" aria-labelledby="heroTitle">
+  <div class="hero-stage"><div class="hero-field" id="heroField"></div></div>
+  <div class="hero-copy">
+    <p class="hero-eyebrow"><span class="live" aria-hidden="true"></span><span id="updated">Loading data…</span></p>
+    <h1 id="heroTitle">How is <span class="w" id="heroWord">IT</span><br>doing today?</h1>
+    <p class="hero-today" id="heroToday"></p>
+    <p class="hero-sub">25 NSE large caps across IT, Banking, Auto, Pharma and FMCG. Prices since 2015, signals computed inside a PostgreSQL database, refreshed automatically every weekday.</p>
+    <div class="hero-cta">
+      <a class="btn" href="#brief">Today in one minute ↓</a>
+      <a class="btn ghost" href="#stocks">Explore a stock</a>
     </div>
-  </section>
+  </div>
+  <div class="hero-scroll" aria-hidden="true">Scroll</div>
+</section>
+
+<main class="wrap" id="main" tabindex="-1">
 
   <section class="card brief" id="brief" aria-labelledby="briefTitle">
     <div class="card-head row">
@@ -228,6 +235,7 @@ ORDER BY strength_rank;</code></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js?v=6"></script>
+<script src="hero.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

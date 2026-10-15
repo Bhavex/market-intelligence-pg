@@ -49,6 +49,7 @@
       document.body.classList.remove("loading");
       renderSummary(summary);
       renderBrief(summary, sectors, stocks, anomalies);
+      if (window.initHero) initHero(stocks.latest, stocks.series, summary.sector_today);
       renderFacts(summary, sectors);
       renderStrength(sectors.strength);
       renderSectorChart(sectors);
@@ -58,6 +59,7 @@
       renderAnomalies(anomalies);
       renderBacktest(backtest);
       renderPipeline(summary.pipeline);
+      if (window.initReveal) initReveal();
     })
     .catch((e) => {
       document.body.classList.remove("loading");
