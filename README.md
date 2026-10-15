@@ -30,7 +30,7 @@ flowchart LR
 - **~73,000 price rows + ~73,000 signal rows**, loaded by an idempotent backfill and kept current by a scheduled pipeline
 - **Signal engine in SQL:** momentum, volatility, 50/200-day moving averages, RSI, volume z-score, 52-week high breakouts, trend and anomaly flags, all in one PL/pgSQL function using window functions and `INSERT … ON CONFLICT`
 - **Measured performance:** indexes, a partial index, a materialized view and year partitioning are benchmarked with `EXPLAIN ANALYZE` every week → [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
-- **Data-quality gate:** 8 automated checks (freshness, impossible prices, missing trading days, signal coverage…) fail the pipeline if data is bad
+- **Data-quality gate:** 9 automated checks (freshness, impossible prices, missing trading days, signal coverage…) fail the pipeline if data is bad
 - **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
 - **Security:** least-privilege read-only role for analysts and Power BI; secrets only in GitHub Actions
 - **Sector-rotation backtest** (2015 to today) on the live dashboard

@@ -374,7 +374,7 @@
     const facts = [
       [(s.price_rows + s.signal_rows).toLocaleString("en-IN"), "rows of prices and signals"],
       [years + " years", "of daily history per stock"],
-      ["8 checks", "of data quality on every load"],
+      ["9 checks", "of data quality on every load"],
       ["0", "manual steps per day"],
     ];
     document.getElementById("facts").innerHTML =
