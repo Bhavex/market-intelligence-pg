@@ -97,6 +97,17 @@ code { font-size: 12.5px; background: var(--grid); padding: 1px 5px; border-radi
 body.loading .chart-box { background: linear-gradient(90deg, transparent 25%, var(--hover) 50%, transparent 75%) 0 0 / 300% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 8px; }
 @media (prefers-reduced-motion: reduce) { .skeleton, body.loading .chart-box { animation: none; } html { scroll-behavior: auto; } }
 
+/* ---------- "Today in one minute" brief ---------- */
+.card.brief { margin-top: 18px; border-left: 4px solid var(--accent); }
+.brief .card-head { margin-bottom: 8px; }
+.brief-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.brief-list li { position: relative; padding-left: 22px; font-size: 15px; line-height: 1.55; max-width: 75ch; }
+.brief-list li::before { content: ""; position: absolute; left: 4px; top: .62em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.brief-list li.skeleton-line { height: 18px; border-radius: 6px; background: var(--grid); max-width: 60ch; }
+.brief-list li.skeleton-line::before { display: none; }
+.brief-list b { font-weight: 650; }
+.brief-list .up, .brief-list .down { font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* ---------- cards ---------- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
 .card-head { margin-bottom: 14px; }

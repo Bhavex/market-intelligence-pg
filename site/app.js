@@ -48,6 +48,7 @@
     .then(([summary, sectors, stocks, anomalies, backtest]) => {
       document.body.classList.remove("loading");
       renderSummary(summary);
+      renderBrief(summary, sectors, stocks, anomalies);
       renderFacts(summary, sectors);
       renderStrength(sectors.strength);
       renderSectorChart(sectors);
@@ -79,6 +80,68 @@
     document.getElementById("kpis").innerHTML = k
       .map(([l, v, h]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${esc(v)}</div><div class="hint">${h}</div></div>`)
       .join("");
+  }
+
+  // ---------- "Today in one minute": the day's numbers written as plain sentences ----------
+  function renderBrief(s, sec, stocks, anomalies) {
+    const box = document.getElementById("briefList");
+    if (!box) return;
+    const latest = stocks.latest || [];
+    const b = (t) => `<b>${esc(t)}</b>`;
+    const move = (v) => `<span class="${cls(v)}">${sign(v)}</span>`;
+    const list = (names) => names.length <= 1 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    const items = [];
+
+    // 1. Sectors today (from the export; older exports fall back to averaging the stock snapshot)
+    let st = (s.sector_today || []).filter((r) => r.avg_return_1d != null);
+    if (!st.length) {
+      const g = {};
+      latest.forEach((r) => { if (r.return_1d != null) (g[r.sector_name] ||= []).push(r.return_1d); });
+      st = Object.entries(g).map(([k, v]) => ({ sector_name: k, avg_return_1d: v.reduce((a, x) => a + x, 0) / v.length }))
+        .sort((a, z) => z.avg_return_1d - a.avg_return_1d);
+    }
+    if (st.length) {
+      const top = st[0], bot = st[st.length - 1], nUp = st.filter((r) => r.avg_return_1d > 0).length;
+      items.push(["sectors", `${b(top.sector_name)} led the day ${move(top.avg_return_1d)} and ${b(bot.sector_name)} lagged ${move(bot.avg_return_1d)}. ` +
+        `${nUp} of ${st.length} sectors closed higher.`]);
+    }
+
+    // 2. Breadth and the biggest single-stock move
+    const moved = latest.filter((r) => r.return_1d != null);
+    if (moved.length) {
+      const nUp = moved.filter((r) => r.return_1d > 0).length;
+      const big = moved.reduce((a, r) => (Math.abs(r.return_1d) > Math.abs(a.return_1d) ? r : a));
+      const mood = nUp >= moved.length * 0.7 ? "a broad up day" : nUp <= moved.length * 0.3 ? "a broad down day" : "a mixed day";
+      items.push(["breadth", `It was ${mood}: ${nUp} of ${moved.length} stocks rose. Biggest mover: ${b(big.company_name)} ${move(big.return_1d)}.`]);
+    }
+
+    // 3. 52-week high breakouts
+    if (Array.isArray(s.breakouts)) {
+      const br = s.breakouts, strong = br.filter((r) => r.strong);
+      items.push(["breakouts", br.length
+        ? `${br.length} ${br.length === 1 ? "stock" : "stocks"} hit a new 52-week high: ${list(br.map((r) => b(r.company_name)))}` +
+          (!strong.length ? "." : strong.length === br.length
+            ? `, ${br.length === 1 ? "" : "all "}on unusually heavy volume (a strong breakout).`
+            : `. ${list(strong.map((r) => b(r.company_name)))} broke out on unusually heavy volume (a strong breakout).`)
+        : "No stock hit a new 52-week high today."]);
+    }
+
+    // 4. Anomalies on the latest day
+    const an = (anomalies || []).filter((r) => r.price_date === s.latest_date);
+    items.push(["anomalies", an.length
+      ? `${an.length} unusual ${an.length === 1 ? "move" : "moves"} flagged: ` +
+        an.slice(0, 3).map((r) => `${b(r.company_name)} ${move(r.return_1d)}`).join(", ") + (an.length > 3 ? ` and ${an.length - 3} more.` : ".")
+      : "No unusual price or volume moves were flagged."]);
+
+    // 5. The bigger picture: 20-day leader
+    const lead = (sec.strength || []).find((r) => r.strength_rank === 1);
+    if (lead) items.push(["trend", `Over the last 20 trading days, ${b(lead.sector_name)} is the strongest sector (momentum ${sign(lead.avg_momentum_20d)}).`]);
+
+    document.getElementById("briefDate").textContent = fmtDate(s.latest_date);
+    box.innerHTML = items.map(([k, t]) => `<li class="brief-${k}">${t}</li>`).join("");
+    const copy = document.getElementById("briefCopy");
+    if (copy) copy.addEventListener("click", () =>
+      copyText(`NSE sectors, ${fmtDate(s.latest_date)}\n` + [...box.children].map((li) => "• " + li.innerText).join("\n"), "Summary copied"));
   }
 
   function renderStrength(rows) {
