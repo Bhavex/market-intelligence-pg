@@ -49,6 +49,7 @@
       document.body.classList.remove("loading");
       renderSummary(summary);
       renderBrief(summary, sectors, stocks, anomalies);
+      if (window.initHero) initHero(stocks.latest, stocks.series, summary.sector_today);
       renderFacts(summary, sectors);
       renderStrength(sectors.strength);
       renderSectorChart(sectors);
@@ -58,6 +59,8 @@
       renderAnomalies(anomalies);
       renderBacktest(backtest);
       renderPipeline(summary.pipeline);
+      if (window.initReveal) initReveal();
+      if (window.initDock) initDock();
     })
     .catch((e) => {
       document.body.classList.remove("loading");
@@ -371,7 +374,7 @@
     const facts = [
       [(s.price_rows + s.signal_rows).toLocaleString("en-IN"), "rows of prices and signals"],
       [years + " years", "of daily history per stock"],
-      ["8 checks", "of data quality on every load"],
+      ["9 checks", "of data quality on every load"],
       ["0", "manual steps per day"],
     ];
     document.getElementById("facts").innerHTML =
@@ -405,10 +408,13 @@
   themeBtn.textContent = dark ? "☀ Light" : "☾ Dark";
   themeBtn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
   themeBtn.addEventListener("click", () => {
-    const next = dark ? "light" : "dark";
+    const root = document.documentElement;
+    const isDark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = isDark ? "light" : "dark";
     try { localStorage.setItem("theme", next); } catch (e) {}
-    document.documentElement.dataset.theme = next;
-    location.reload();                       // charts and map re-render in the new colours
+    root.dataset.theme = next;                 // page colours switch straight away
+    themeBtn.textContent = next === "dark" ? "☀ Light" : "☾ Dark";
+    setTimeout(() => location.reload(), 120); // charts and map re-render in the new colours
   });
   const bar = document.getElementById("progress"), top = document.getElementById("toTop");
   const onScroll = () => {

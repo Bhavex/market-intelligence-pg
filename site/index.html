@@ -35,7 +35,8 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="hero.css?v=8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body class="loading">
@@ -47,14 +48,6 @@
     <a class="brand" href="#top" aria-label="NSE Sector Intelligence, back to top">
       <span class="logo" aria-hidden="true"></span>NSE Sector Intelligence
     </a>
-    <nav class="nav" aria-label="Sections">
-      <a href="#sectors">Sectors</a>
-      <a href="#stocks">Stocks</a>
-      <a href="#map-section">Map</a>
-      <a href="#backtest">Backtest</a>
-      <a href="#how">How it works</a>
-      <a href="#faq">FAQ</a>
-    </nav>
     <div class="top-meta">
       <button class="icon-btn text" id="themeToggle" type="button" aria-label="Switch colour theme">☾ Dark</button>
       <a class="btn" href="https://github.com/Bhavex/market-intelligence-pg" target="_blank" rel="noopener">View code</a>
@@ -62,16 +55,23 @@
   </div>
 </header>
 
-<main class="wrap" id="main" tabindex="-1">
-  <section class="hero">
-    <h1>How are India's biggest sectors doing today?</h1>
-    <p class="sub">25 NSE large caps across IT, Banking, Auto, Pharma and FMCG. Prices since 2015, signals computed inside a PostgreSQL database, refreshed automatically every weekday.</p>
-    <div class="hero-row">
-      <span class="pill" id="updated">Loading data…</span>
-      <span class="pill quiet">Updated every weekday evening · re-checked next morning</span>
-      <a class="btn ghost" href="#stocks">Explore a stock ↓</a>
+<section class="hero3d" id="hero3d" aria-labelledby="heroTitle">
+  <div class="hero-glow" id="heroGlow" aria-hidden="true"></div>
+  <div class="hero-stage"><div class="hero-field" id="heroField"></div></div>
+  <div class="hero-copy">
+    <p class="hero-eyebrow"><span class="live" aria-hidden="true"></span><span id="updated">Loading data…</span></p>
+    <h1 id="heroTitle">How is <span class="w" id="heroWord">IT</span><br>doing today?</h1>
+    <p class="hero-today" id="heroToday"></p>
+    <p class="hero-sub">25 NSE large caps across IT, Banking, Auto, Pharma and FMCG. Prices since 2015, signals computed inside a PostgreSQL database, refreshed automatically every weekday.</p>
+    <div class="hero-cta">
+      <a class="btn" href="#brief">Today in one minute ↓</a>
+      <a class="btn ghost" href="#stocks">Explore a stock</a>
     </div>
-  </section>
+  </div>
+  <p class="hero-hint" aria-hidden="true">Move your cursor through the cards · drag to spin · click for a ripple</p>
+</section>
+
+<main class="wrap" id="main" tabindex="-1">
 
   <section class="card brief" id="brief" aria-labelledby="briefTitle">
     <div class="card-head row">
@@ -222,12 +222,24 @@ ORDER BY strength_rank;</code></pre>
     <a href="https://github.com/Bhavex/market-intelligence-pg/issues/new" target="_blank" rel="noopener">Report a problem</a></p>
 </footer>
 
+<nav class="dock" id="dock" aria-label="Sections">
+  <div class="dock-inner">
+    <a href="#brief">Today</a>
+    <a href="#sectors">Sectors</a>
+    <a href="#stocks">Stocks</a>
+    <a href="#map-section">Map</a>
+    <a href="#backtest">Backtest</a>
+    <a href="#how">How it works</a>
+    <a href="#faq">FAQ</a>
+  </div>
+</nav>
 <a class="fab feedback" href="https://github.com/Bhavex/market-intelligence-pg/issues/new" target="_blank" rel="noopener">Feedback</a>
 <button class="fab totop" id="toTop" type="button" aria-label="Back to top">↑</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js?v=6"></script>
+<script src="hero.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
