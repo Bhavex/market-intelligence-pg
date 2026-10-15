@@ -60,6 +60,7 @@
       renderBacktest(backtest);
       renderPipeline(summary.pipeline);
       if (window.initReveal) initReveal();
+      if (window.initDock) initDock();
     })
     .catch((e) => {
       document.body.classList.remove("loading");
@@ -407,10 +408,13 @@
   themeBtn.textContent = dark ? "☀ Light" : "☾ Dark";
   themeBtn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
   themeBtn.addEventListener("click", () => {
-    const next = dark ? "light" : "dark";
+    const root = document.documentElement;
+    const isDark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = isDark ? "light" : "dark";
     try { localStorage.setItem("theme", next); } catch (e) {}
-    document.documentElement.dataset.theme = next;
-    location.reload();                       // charts and map re-render in the new colours
+    root.dataset.theme = next;                 // page colours switch straight away
+    themeBtn.textContent = next === "dark" ? "☀ Light" : "☾ Dark";
+    setTimeout(() => location.reload(), 120); // charts and map re-render in the new colours
   });
   const bar = document.getElementById("progress"), top = document.getElementById("toTop");
   const onScroll = () => {
