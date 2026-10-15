@@ -154,6 +154,17 @@ def main():
                      WHERE job_name = 'daily_update' AND status IN ('success','partial'))""").fetchone()
         snap = q(conn, "SELECT * FROM v_latest_snapshot")
         health = q(conn, "SELECT job_name, finished_at, status, rows_upserted, message FROM v_pipeline_health")
+        # For the plain-English "Today in one minute" brief on the site
+        sector_today = q(conn, """
+            SELECT sector_name, avg_return_1d FROM v_sector_daily
+            WHERE price_date = %s ORDER BY avg_return_1d DESC NULLS LAST""", (latest,))
+        breakouts = q(conn, """
+            SELECT s.ticker, c.company_name, sec.sector_name, s.strong_breakout AS strong
+            FROM signals s
+            JOIN companies c   ON c.ticker = s.ticker
+            JOIN sectors   sec ON sec.sector_id = c.sector_id
+            WHERE s.signal_date = %s AND s.breakout_52w
+            ORDER BY s.strong_breakout DESC, s.ticker""", (latest,))
         write("summary.json", {
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="minutes"),
             "latest_date": clean(latest),
@@ -164,6 +175,8 @@ def main():
             "n_down": int((snap["trend"] == "DOWN").sum()),
             "n_anomalies": int((snap["is_anomaly"] & (snap["price_date"] == latest)).sum()),
             "pipeline": records(health),
+            "sector_today": records(sector_today, 4),
+            "breakouts": records(breakouts),
         })
 
         # ---------- sectors ----------

@@ -35,7 +35,7 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body class="loading">
@@ -71,6 +71,19 @@
       <span class="pill quiet">Updated every weekday evening · re-checked next morning</span>
       <a class="btn ghost" href="#stocks">Explore a stock ↓</a>
     </div>
+  </section>
+
+  <section class="card brief" id="brief" aria-labelledby="briefTitle">
+    <div class="card-head row">
+      <div>
+        <h2 id="briefTitle">Today in one minute</h2>
+        <p class="note">The latest trading day in plain words · <span id="briefDate">…</span></p>
+      </div>
+      <button class="btn ghost" id="briefCopy" type="button">Copy summary</button>
+    </div>
+    <ul class="brief-list" id="briefList" aria-live="polite">
+      <li class="skeleton-line"></li><li class="skeleton-line"></li><li class="skeleton-line"></li>
+    </ul>
   </section>
 
   <section class="kpis" id="kpis" aria-label="Key figures">
@@ -215,6 +228,6 @@ ORDER BY strength_rank;</code></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
