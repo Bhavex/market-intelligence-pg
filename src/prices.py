@@ -6,6 +6,8 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 
 import yfinance as yf
 
+import db
+
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # NSE closes at 15:30 IST. A day's bar is stored only after close + a 1-hour buffer, so a
@@ -13,9 +15,11 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # in sql/07_trading_calendar.sql, which also uses 16:30.
 FINAL_AFTER = dtime(16, 30)
 
-_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume)"
-_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-_PRICE_FIELDS = ("open", "high", "low", "close", "adj_close", "volume")
+_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume, source)"
+_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+# source is part of the comparison: an hourly-rebuilt row later confirmed by the daily candle is
+# re-labelled (and versioned) even when the numbers are identical.
+_PRICE_FIELDS = ("open", "high", "low", "close", "adj_close", "volume", "source")
 
 # Insert a new row, or overwrite an existing one ONLY if a value actually differs. Unchanged rows
 # are neither rewritten nor audited. xmax = 0 tells a fresh insert from an update.
@@ -24,9 +28,14 @@ INSERT INTO daily_prices {_COLS} {_VALUES}
 ON CONFLICT (ticker, price_date) DO UPDATE SET
     open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
     close = EXCLUDED.close, adj_close = EXCLUDED.adj_close,
-    volume = EXCLUDED.volume, loaded_at = now()
-WHERE ({", ".join("daily_prices." + c for c in _PRICE_FIELDS)})
-      IS DISTINCT FROM ({", ".join("EXCLUDED." + c for c in _PRICE_FIELDS)})
+    volume = EXCLUDED.volume, source = EXCLUDED.source, loaded_at = now()
+WHERE ({", ".join("daily_prices." + c for c in _PRICE_FIELDS if c != "adj_close")})
+      IS DISTINCT FROM ({", ".join("EXCLUDED." + c for c in _PRICE_FIELDS if c != "adj_close")})
+   -- adj_close is recomputed by Yahoo on every download: ignore last-digit wobble (a real dividend
+   -- adjustment moves it by 0.1 percent or more), so the weekly full-history scan does not create
+   -- thousands of fake revisions in price_versions
+   OR (daily_prices.adj_close IS NULL) <> (EXCLUDED.adj_close IS NULL)
+   OR ABS(daily_prices.adj_close - EXCLUDED.adj_close) > GREATEST(0.00015, ABS(EXCLUDED.adj_close) * 0.000002)
 RETURNING price_date, (xmax = 0) AS inserted
 """
 
@@ -157,12 +166,21 @@ def fetch_rows(ticker: str, start: date, retries: int = 3) -> list[tuple]:
     return sorted(f.daily + f.fallback, key=lambda r: r[1])
 
 
-def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True) -> UpsertStats:
+def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,
+                source: str | None = None) -> UpsertStats:
     """Upsert rows and report how many were inserted, updated (value changed) or unchanged.
-    insert_only=True never overwrites an existing row (used for approximate fallback rows)."""
+    insert_only=True never overwrites an existing row (used for approximate fallback rows).
+    Rows are (ticker, date, open, high, low, close, adj_close, volume); the provenance label
+    stored in daily_prices.source defaults to 'yahoo_hourly' for insert_only (hourly-rebuilt)
+    rows and 'yahoo_daily' otherwise. Every change is versioned by 08_point_in_time.sql."""
     stats = UpsertStats()
     if not rows:
         return stats
+    src = source or ("yahoo_hourly" if insert_only else "yahoo_daily")
+    run_id = db.current_run_id()
+    if run_id is not None:   # provenance for the versioning trigger; transaction-local, so it is
+        conn.execute("SELECT set_config('app.run_id', %s, true)", (str(run_id),))  # safe behind a pooler
+    rows = [tuple(r) if len(r) == 9 else tuple(r) + (src,) for r in rows]
     updated_dates = []
     with conn.cursor() as cur:
         cur.executemany(INSERT_ONLY_SQL if insert_only else UPSERT_SQL, rows, returning=True)

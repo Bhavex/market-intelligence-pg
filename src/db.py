@@ -27,6 +27,14 @@ def active_tickers(conn) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+_CURRENT_RUN = {"id": None}
+
+
+def current_run_id():
+    """run_id of the pipeline_run() block in progress (None outside one)."""
+    return _CURRENT_RUN["id"]
+
+
 @contextmanager
 def pipeline_run(conn, job_name: str):
     """Logs a row in pipeline_runs. Yields a dict the job fills with
@@ -36,8 +44,11 @@ def pipeline_run(conn, job_name: str):
             "INSERT INTO pipeline_runs (job_name) VALUES (%s) RETURNING run_id", (job_name,)
         )
         run_id = cur.fetchone()[0]
+    # provenance: prices.upsert_rows() passes this id to the versioning trigger
+    # (sql/08_point_in_time.sql) inside each write transaction
+    _CURRENT_RUN["id"] = run_id
     conn.commit()
-    info = {"rows_upserted": 0, "tickers_failed": [], "message": None}
+    info = {"rows_upserted": 0, "tickers_failed": [], "message": None, "run_id": run_id}
     try:
         yield info
         status = "partial" if info["tickers_failed"] else "success"
@@ -56,3 +67,4 @@ def pipeline_run(conn, job_name: str):
                 (status, info["rows_upserted"], info["tickers_failed"], info["message"], run_id),
             )
         conn.commit()
+        _CURRENT_RUN["id"] = None

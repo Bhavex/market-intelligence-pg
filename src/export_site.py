@@ -241,6 +241,16 @@ def main():
         # ---------- backtest ----------
         write("backtest.json", backtest(conn))
 
+        # ---------- data trust: point-in-time history, official reconciliation, fragility ----------
+        # Optional research layer (sql/08-10): if anything is missing the rest of the site still publishes.
+        try:
+            from trust_report import collect
+            (OUT / "trust.json").write_text(json.dumps(collect(conn), separators=(",", ":"), default=str))
+            print("wrote trust.json")
+        except Exception as exc:
+            conn.rollback()
+            print(f"trust.json skipped: {type(exc).__name__}: {exc}")
+
 
 if __name__ == "__main__":
     main()
