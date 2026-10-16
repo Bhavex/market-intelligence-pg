@@ -1,0 +1,21 @@
+name: Weekly fundamentals snapshot
+
+on:
+  schedule:
+    - cron: "0 12 * * 6"      # Saturday 5:30 PM IST
+  workflow_dispatch:
+
+jobs:
+  fundamentals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python src/fundamentals.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
