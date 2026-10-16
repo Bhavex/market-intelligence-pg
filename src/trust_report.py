@@ -90,6 +90,8 @@ def markdown(d: dict) -> str:
                 f"to final value {s['median_settle']} h after the session; median first-print error "
                 f"{s['median_first_to_final_bp']} bp."]
     out += ["", "### Yahoo vs official exchange close", "",
+            "Yahoo's .NS prices are NSE prices: the NSE row is Yahoo's accuracy, the BSE row is the gap "
+            "between two different exchanges' closing prices (not a Yahoo error).", "",
             "| Source | Compared | Sessions | Agree % | Mean abs. diff (bp) | Max (bp) | First-print agree % |",
             "|---|---:|---:|---:|---:|---:|---:|"]
     out += [f"| {r['source']} | {r['n_compared']} | {r['n_sessions']} | {r['agree_pct']} | {r['mean_abs_diff_bp']} | "
