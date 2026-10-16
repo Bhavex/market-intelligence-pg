@@ -17,7 +17,9 @@ CREATE OR REPLACE VIEW v_price_trust AS
 WITH ver AS (
     -- Only changes of the reported values count against trust. Dividend / split back-adjustment
     -- is Yahoo correctly rescaling history, not an error, so it is not counted here.
-    SELECT ticker, price_date, COUNT(*) AS n_revisions, MAX(revised_at) AS last_change
+    SELECT ticker, price_date, COUNT(*) AS n_revisions,
+           -- "not settled" only when the CLOSE changed recently (a late volume/OHL fix is not a price risk)
+           MAX(revised_at) FILTER (WHERE revision_kind NOT IN ('volume_revision', 'ohl_revision')) AS last_change
     FROM v_price_revisions
     WHERE revision_kind NOT IN ('dividend_adjustment', 'split_or_bonus_adjustment', 'deleted')
     GROUP BY ticker, price_date

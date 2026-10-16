@@ -107,13 +107,14 @@ FROM v_source_agreement a
 WHERE NOT scale_mismatch
 GROUP BY source;
 
--- Worst disagreements, newest first (for the report and the dashboard)
+-- Worst disagreements with the SAME exchange, newest first. Yahoo's .NS series is NSE data, so a gap to
+-- BSE is a cross-exchange difference, not an error, and is not listed here.
 CREATE OR REPLACE VIEW v_source_disagreements AS
 SELECT a.price_date, a.ticker, c.company_name, a.source, a.yahoo_close, a.official_close,
        a.official_last_price, a.diff_bp, a.matches_last_trade_instead, a.yahoo_source
 FROM v_source_agreement a
 JOIN companies c ON c.ticker = a.ticker
-WHERE NOT a.agrees AND NOT a.scale_mismatch
+WHERE NOT a.agrees AND NOT a.scale_mismatch AND a.source = 'NSE'
 ORDER BY a.price_date DESC, ABS(a.diff_bp) DESC;
 
 -- Best available close for each stock-day: official NSE, else official BSE, else Yahoo.
