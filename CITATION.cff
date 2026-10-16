@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software or its dataset, please cite it as below."
+title: "NSE Sector Intelligence: a point-in-time database and data-quality study of free end-of-day stock data"
+type: software
+authors:
+  # add "family-names: <surname>" below, and teammates as further entries, before the first release
+  - given-names: Bhavishya
+    affiliation: "Vellore Institute of Technology"
+repository-code: "https://github.com/Bhavex/market-intelligence-pg"
+url: "https://bhavex.github.io/market-intelligence-pg/"
+keywords:
+  - bitemporal database
+  - data quality
+  - data provenance
+  - PostgreSQL
+  - NSE
+  - market data

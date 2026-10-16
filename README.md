@@ -34,7 +34,7 @@ flowchart LR
 - **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
 - **Security:** least-privilege read-only role for analysts and Power BI; secrets only in GitHub Actions
 - **Sector-rotation backtest** (2015 to today) on the live dashboard
-- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal → [docs/TRUST.md](docs/TRUST.md)
+- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal. Run on 75 stocks (NIFTY 50 + 25 small caps) and two Yahoo listings (NSE and BSE), with results by company size and an open, citable dataset → [docs/TRUST.md](docs/TRUST.md)
 
 ## DBMS concepts used
 
@@ -74,11 +74,14 @@ flowchart LR
 | `src/adya_snapshot.py`, `sql/analytics/` | Analytics report queries and a before/after comparison tool |
 | `tests/` | Unit tests for the price pipeline |
 | `src/benchmark.py` | `EXPLAIN ANALYZE` benchmarks → `docs/BENCHMARKS.md` |
+| `sql/08`–`sql/11`, `src/revision_scan.py`, `src/official_prices.py`, `src/fragility.py`, `src/trust_report.py` | Data-trust research layer (versions, official reconciliation, trust score, fragility) |
+| `src/universe.py`, `src/alt_feed.py`, `sql/11_research.sql` | Research universe (NIFTY 50 + 25 small caps), Yahoo BSE feed, results by group |
+| `src/export_dataset.py`, `CITATION.cff` | Open research dataset (derived data only) and citation |
 | `src/export_site.py` | Exports dashboard JSON + computes the backtest |
 | `site/` | Static dashboard (Chart.js + Leaflet), deployed to GitHub Pages |
 | `demo/viva_queries.sql` | 14 demo queries: joins, GROUP BY/HAVING, subqueries, window functions, CTEs |
 | `demo/transactions_demo.sql` | ACID demo: atomicity, constraints, savepoints, procedures, isolation |
-| `.github/workflows/` | Daily load, site publish, weekly benchmark, weekly fundamentals, one-time backfill |
+| `.github/workflows/` | Daily load, site publish, weekly benchmark, weekly fundamentals, weekly data trust study, dataset release, one-time backfill |
 
 ## Signals
 
