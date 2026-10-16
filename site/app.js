@@ -451,11 +451,14 @@
         }).join("")
       : `<tr><td class="note">No revisions recorded yet.</td></tr>`;
 
-    const ag = t.agreement || [];
+    // Yahoo's ".NS" prices ARE NSE prices, so the NSE row is Yahoo's accuracy. BSE is a different
+    // exchange with its own closing price: that row is the gap between the two exchanges.
+    const ag = (t.agreement || []).slice().sort((a) => (a.source === "NSE" ? -1 : 1));
+    const label = { NSE: "NSE (same exchange) · Yahoo's accuracy", BSE: "BSE (other exchange) · NSE vs BSE gap" };
     document.getElementById("agreeTable").innerHTML = ag.length
-      ? `<tr><th>Source</th><th class="num">Closes</th><th class="num">Agree</th><th class="num">Max gap</th></tr>` +
-        ag.map((r) => `<tr><td>${esc(r.source)}</td><td class="num">${r.n_compared.toLocaleString("en-IN")}</td>
-          <td class="num">${r.agree_pct == null ? "–" : r.agree_pct.toFixed(2) + "%"}</td><td class="num">${num(r.max_abs_diff_bp, 1)} bp</td></tr>`).join("")
+      ? `<tr><th>Official file</th><th class="num">Closes</th><th class="num">Identical</th><th class="num">Avg gap</th></tr>` +
+        ag.map((r) => `<tr><td style="white-space:normal">${esc(label[r.source] || r.source)}</td><td class="num">${r.n_compared.toLocaleString("en-IN")}</td>
+          <td class="num">${r.agree_pct == null ? "–" : r.agree_pct.toFixed(1) + "%"}</td><td class="num">${num(r.mean_abs_diff_bp, 1)} bp</td></tr>`).join("")
       : `<tr><td class="note" style="white-space:normal">No official exchange files downloaded yet${
           (t.coverage || []).some((c) => c.status === "blocked") ? " (the exchanges blocked the cloud server; see docs/TRUST.md)" : ""}.</td></tr>`;
 
