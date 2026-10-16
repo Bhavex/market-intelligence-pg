@@ -61,7 +61,7 @@ class FragilityMaths(unittest.TestCase):
                 px *= float(np.exp(rng.normal(0, 0.02)))
                 rows.append(dict(ticker=t, price_date=d, open=px * 0.99, high=px * 1.01, low=px * 0.98,
                                  close=px, adj_close=px * 0.97, volume=float(rng.integers(1000, 5000)),
-                                 sector_name=sector))
+                                 sector_name=sector, in_dashboard=True, cap_group="large"))
         return pd.DataFrame(rows)
 
     def test_closed_form_equals_full_recompute(self):
