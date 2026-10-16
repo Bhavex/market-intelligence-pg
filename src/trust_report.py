@@ -101,7 +101,7 @@ def markdown(d: dict) -> str:
     out += ["", "Download log: " + (", ".join(f"{r['source']} {r['status']} {r['n_files']}" for r in d["coverage"]) or "none")]
     if d["fragility_run"]:
         val = d["fragility_run"]["validation"] or {}
-        out += ["", "### Signal fragility (flip rate, % of comparisons, 95% Wilson interval)", "",
+        out += ["", "### Signal fragility (flip rate, % of comparisons, 95% cluster-robust interval)", "",
                 f"Python replica vs database signals: {json.dumps(val)}", "",
                 "| Group | Scenario | Signal | Compared | Flipped | Flip % | 95% CI |", "|---|---|---|---:|---:|---:|---|"]
         out += [f"| {r['universe']} | {r['scenario']} | {SIGNAL_NAMES.get(r['signal'], r['signal'])} | {r['n_compared']:,} | "
@@ -112,7 +112,7 @@ def markdown(d: dict) -> str:
         out += ["", "### Data quality by group of stocks", "",
                 "| Group | Stocks | Yahoo=NSE % | First print final % | Yahoo BSE=BSE % | Missing sessions % | Value revisions /1000 |",
                 "|---|---:|---:|---:|---:|---:|---:|"]
-        out += [f"| {r['grp']} | {r['n_stocks']} | {r['nse_agree_pct']} | {r['nse_first_print_agree_pct']} | "
+        out += [f"| {r['grp']} | {r['n_stocks']} | {r['nse_agree_pct']} | {r['nse_first_print_agree_pct']} (n={int(r['nse_live_first_prints'] or 0)}) | "
                 f"{r['bse_feed_agree_pct']} | {r['missing_pct']} | {r['value_revisions_per_1000']} |" for r in d["groups"]]
     out += ["", f"Database size: {d['storage']['database_size']} (Neon Free allows 1 GB per project)."]
     grades = [r for r in d["trust_summary"] if r["period"] == "last_30_sessions"]
