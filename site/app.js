@@ -413,7 +413,9 @@
     const kp = document.getElementById("trustKpis");
     if (!kp || !t) return;
     const nse = (t.agreement || []).find((r) => r.source === "NSE") || (t.agreement || [])[0];
-    const frag = (t.fragility || []).filter((r) => r.scenario === "intraday_snapshot" && r.flip_pct != null);
+    const fragAll = t.fragility || [];
+    const dashFrag = fragAll.filter((r) => (r.universe || "dashboard") === "dashboard");
+    const frag = dashFrag.filter((r) => r.scenario === "intraday_snapshot" && r.flip_pct != null);
     const worst = frag.slice().sort((a, b) => b.flip_pct - a.flip_pct)[0];
     const v = t.versions || {};
     const set = t.settlement || {};
@@ -467,7 +469,7 @@
                   ["hourly_rebuild", "Close rebuilt from hourly bars", css("--s-it")]];
     const order = ["sector_leader", "is_anomaly", "rsi_zone", "trend", "momentum_sign", "breakout_52w", "strong_breakout"];
     const byKey = {};
-    (t.fragility || []).forEach((r) => (byKey[r.scenario + "|" + r.signal] = r));
+    dashFrag.forEach((r) => (byKey[r.scenario + "|" + r.signal] = r));
     const present = scen.filter(([k]) => order.some((s) => byKey[k + "|" + s]));
     if (present.length) {
       new Chart(document.getElementById("fragChart"), {
@@ -490,6 +492,24 @@
           scales: { x: { grid: { color: css("--grid") }, ticks: { callback: (x) => x + "%" } }, y: { grid: { display: false } } },
         },
       });
+    }
+
+    // ---- data quality by company size (dashboard 25 / large caps / small caps) ----
+    const groups = t.groups || [];
+    const gBox = document.getElementById("groupTable");
+    if (gBox && groups.some((g) => g.grp !== "dashboard")) {
+      const GN = { dashboard: "Dashboard 25", large: "Large caps (NIFTY 50 + dashboard)", small: "Small caps (25 from NIFTY Smallcap 100)" };
+      const flip = (grp) => {
+        const r = fragAll.find((x) => x.universe === grp && x.scenario === "intraday_snapshot" && x.signal === "trend");
+        return r && r.flip_pct != null ? r.flip_pct.toFixed(2) + "%" : "–";
+      };
+      const p = (v, d = 2) => (v == null ? "–" : Number(v).toFixed(d) + "%");
+      gBox.closest(".group-wrap").hidden = false;
+      gBox.innerHTML = `<tr><th>Group</th><th class="num">Stocks</th><th class="num">Yahoo = NSE</th><th class="num">First print final</th>
+        <th class="num">Yahoo BSE = BSE</th><th class="num">Missing days</th><th class="num">Trend flips (intraday)</th></tr>` +
+        groups.map((g) => `<tr><td style="white-space:normal">${esc(GN[g.grp] || g.grp)}</td><td class="num">${g.n_stocks}</td>
+          <td class="num">${p(g.nse_agree_pct)}</td><td class="num">${p(g.nse_first_print_agree_pct, 1)}</td>
+          <td class="num">${p(g.bse_feed_agree_pct)}</td><td class="num">${p(g.missing_pct)}</td><td class="num">${flip(g.grp)}</td></tr>`).join("");
     }
 
     const bt = {};

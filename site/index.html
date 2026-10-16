@@ -35,7 +35,7 @@
   "keywords": ["NSE", "stock market", "PostgreSQL", "sector analysis", "DBMS project"]
 }
 </script>
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 <link rel="stylesheet" href="hero.css?v=8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
@@ -190,6 +190,11 @@
         <div class="table-scroll"><table id="agreeTable" class="tbl"></table></div>
       </div>
     </div>
+    <div class="group-wrap" hidden>
+      <h3 class="sub-h">Big companies vs small companies</h3>
+      <p class="note">The same checks on the 25 dashboard stocks, the NIFTY 50 and 25 small caps from the NIFTY Smallcap 100 (tracked for this study only). "Missing days" = sessions in which the exchange says the stock traded but the free feed has no price.</p>
+      <div class="table-scroll"><table id="groupTable" class="tbl"></table></div>
+    </div>
     <p class="note" id="trustBacktest"></p>
     <p class="note">Method, scenarios and limitations: <a href="https://github.com/Bhavex/market-intelligence-pg/blob/main/docs/TRUST.md" target="_blank" rel="noopener">docs/TRUST.md</a>. Try it yourself:
       <code>SELECT * FROM prices_as_of('2026-10-13 10:00+05:30') WHERE ticker = 'INFY.NS';</code></p>
@@ -269,6 +274,6 @@ ORDER BY strength_rank;</code></pre>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="hero.js?v=8"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
