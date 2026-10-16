@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       official_days:
-        description: "Sessions of official exchange files to fetch (use 250 the first time)"
-        default: "10"
+        description: "Sessions of official exchange files to check (already downloaded files are skipped)"
+        default: "250"
       sims:
         description: "Repetitions of each simulated error scenario"
         default: "20"
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   study:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
@@ -36,11 +36,17 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Apply schema changes (safe, idempotent)
         run: python src/setup_db.py
-      - name: Revision scan (full history re-download, versioned)
+      - name: Research universe (NIFTY 50 + 25 small caps, from NSE's index files)
+        run: python src/universe.py
+        continue-on-error: true   # if NSE's list can't be downloaded, the universe simply stays as it is
+      - name: Revision scan (full history re-download, versioned; also loads new stocks)
         run: python src/revision_scan.py
       - name: Official exchange closes (NSE/BSE)
-        run: python src/official_prices.py --days ${{ github.event.inputs.official_days || '10' }}
+        run: python src/official_prices.py --days ${{ github.event.inputs.official_days || '250' }}
         continue-on-error: true   # exchanges may block cloud servers; logged in reference_fetch_log
+      - name: Second free feed (Yahoo BSE listing), about a year
+        run: python src/alt_feed.py --days 400
+        continue-on-error: true
       - name: Signal-fragility study
         run: python src/fragility.py --sims ${{ github.event.inputs.sims || '20' }}
       - name: Refresh reporting layer + data-quality checks

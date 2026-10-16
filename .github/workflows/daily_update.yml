@@ -34,6 +34,9 @@ jobs:
       - name: Official exchange closes for reconciliation (never blocks the load)
         run: python src/official_prices.py --days 5
         continue-on-error: true
+      - name: Second free feed, Yahoo BSE listing (never blocks the load)
+        run: python src/alt_feed.py --days 10
+        continue-on-error: true
       - name: Refresh reporting layer + data-quality checks
         run: python src/post_load.py
       - name: Verify 52-week signals
