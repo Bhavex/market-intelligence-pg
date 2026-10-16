@@ -66,7 +66,7 @@ SELECT c.ticker,
        MAX(p.price_date) >= expected_latest_trading_day() AS is_fresh
 FROM companies c
 LEFT JOIN daily_prices p ON p.ticker = c.ticker
-WHERE c.is_active
+WHERE c.is_active AND c.in_dashboard        -- research stocks never fail the pipeline
 GROUP BY c.ticker;
 
 GRANT SELECT ON market_holidays, v_data_freshness TO readonly_access;

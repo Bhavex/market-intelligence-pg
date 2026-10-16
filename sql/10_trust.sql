@@ -115,6 +115,19 @@ CREATE TABLE IF NOT EXISTS fragility_results (
     CHECK (n_flipped <= n_compared)
 );
 
+-- Results are kept per group of stocks (dashboard 25 / large caps / small caps). Added later:
+-- existing rows (the first study ran on the dashboard stocks only) default to 'dashboard'.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'fragility_results' AND column_name = 'universe') THEN
+        ALTER TABLE fragility_results ADD COLUMN universe VARCHAR(12) NOT NULL DEFAULT 'dashboard'
+            CHECK (universe IN ('dashboard', 'large', 'small'));
+        ALTER TABLE fragility_results DROP CONSTRAINT fragility_results_pkey;
+        ALTER TABLE fragility_results ADD PRIMARY KEY (frag_run_id, universe, scenario, signal);
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS backtest_sensitivity (
     frag_run_id    BIGINT       NOT NULL REFERENCES fragility_runs(frag_run_id) ON DELETE CASCADE,
     scenario       VARCHAR(40)  NOT NULL,
@@ -128,11 +141,12 @@ SELECT r.scenario, r.signal, r.n_compared, r.n_flipped,
        ROUND(r.flip_rate * 100, 3) AS flip_pct,
        ROUND(r.ci_low * 100, 3)    AS ci_low_pct,
        ROUND(r.ci_high * 100, 3)   AS ci_high_pct,
-       f.created_at, f.data_through
+       f.created_at, f.data_through,
+       r.universe                                  -- appended last: the view's earlier columns never change
 FROM fragility_results r
 JOIN fragility_runs f ON f.frag_run_id = r.frag_run_id
 WHERE r.frag_run_id = (SELECT MAX(frag_run_id) FROM fragility_runs)
-ORDER BY r.scenario, r.flip_rate DESC;
+ORDER BY r.universe, r.scenario, r.flip_rate DESC;
 
 GRANT SELECT ON v_price_trust, v_latest_trust, v_trust_summary, fragility_runs, fragility_results,
                 backtest_sensitivity, v_fragility_latest TO readonly_access;

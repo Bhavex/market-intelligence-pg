@@ -75,6 +75,33 @@ ALTER TABLE signals
     ADD COLUMN IF NOT EXISTS pct_from_52w_high NUMERIC(8,2),   -- (adj_close / high_52w - 1) * 100; negative below the high, positive on a breakout
     ADD COLUMN IF NOT EXISTS strong_breakout   BOOLEAN;        -- breakout_52w AND volume_zscore_20d > 2
 
+-- Research universe (added later, guarded so setup never re-locks the table):
+--   in_dashboard      FALSE for stocks tracked only for the data-trust study (not on the site/Power BI)
+--   cap_group         'large' | 'small' (for comparing data quality by company size)
+--   index_membership  index lists the stock was taken from, e.g. {NIFTY 50}
+--   hq_city_id        optional for research stocks (no map position)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'in_dashboard') THEN
+        ALTER TABLE companies ADD COLUMN in_dashboard BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'cap_group') THEN
+        ALTER TABLE companies ADD COLUMN cap_group VARCHAR(8) NOT NULL DEFAULT 'large'
+            CHECK (cap_group IN ('large', 'small'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'index_membership') THEN
+        ALTER TABLE companies ADD COLUMN index_membership TEXT[] NOT NULL DEFAULT '{}';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'hq_city_id'
+                 AND is_nullable = 'NO') THEN
+        ALTER TABLE companies ALTER COLUMN hq_city_id DROP NOT NULL;
+    END IF;
+END $$;
+
 -- Fundamentals are stored as dated snapshots, so history builds up over time.
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          VARCHAR(20) NOT NULL REFERENCES companies(ticker),

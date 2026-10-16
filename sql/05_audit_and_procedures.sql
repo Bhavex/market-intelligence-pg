@@ -69,14 +69,16 @@ FOR EACH ROW WHEN (OLD IS DISTINCT FROM NEW)
 EXECUTE FUNCTION trg_audit();
 
 -- daily_prices: only log real corrections (values changed) and deletions,
--- not the thousands of normal inserts or no-change re-loads.
+-- not the thousands of normal inserts or no-change re-loads. A change of adj_close ALONE is Yahoo
+-- rescaling history after a dividend (thousands of rows each time); it is kept, compactly, in
+-- price_versions (sql/08_point_in_time.sql), so it is not duplicated here as JSON.
 DROP TRIGGER IF EXISTS audit_price_corrections ON daily_prices;
 CREATE TRIGGER audit_price_corrections
 AFTER UPDATE ON daily_prices
 FOR EACH ROW
-WHEN ((OLD.open, OLD.high, OLD.low, OLD.close, OLD.adj_close, OLD.volume)
+WHEN ((OLD.open, OLD.high, OLD.low, OLD.close, OLD.volume)
       IS DISTINCT FROM
-      (NEW.open, NEW.high, NEW.low, NEW.close, NEW.adj_close, NEW.volume))
+      (NEW.open, NEW.high, NEW.low, NEW.close, NEW.volume))
 EXECUTE FUNCTION trg_audit();
 
 DROP TRIGGER IF EXISTS audit_price_deletes ON daily_prices;

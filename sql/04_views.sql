@@ -15,7 +15,8 @@ FROM daily_prices p
 JOIN companies c   ON c.ticker      = p.ticker
 JOIN sectors   sec ON sec.sector_id = c.sector_id
 JOIN cities    ci  ON ci.city_id    = c.hq_city_id
-LEFT JOIN signals s ON s.ticker = p.ticker AND s.signal_date = p.price_date;
+LEFT JOIN signals s ON s.ticker = p.ticker AND s.signal_date = p.price_date
+WHERE c.in_dashboard;          -- research-only stocks (sql/11_research.sql) never reach the dashboards
 
 -- Latest available row per company (snapshot cards, map, tables)
 CREATE OR REPLACE VIEW v_latest_snapshot AS
