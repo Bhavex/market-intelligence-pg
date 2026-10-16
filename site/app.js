@@ -503,12 +503,13 @@
         const r = fragAll.find((x) => x.universe === grp && x.scenario === "intraday_snapshot" && x.signal === "trend");
         return r && r.flip_pct != null ? r.flip_pct.toFixed(2) + "%" : "–";
       };
+      const MIN_LIVE = 250;   // first-print accuracy needs enough prices captured live, not backfilled
       const p = (v, d = 2) => (v == null ? "–" : Number(v).toFixed(d) + "%");
       gBox.closest(".group-wrap").hidden = false;
       gBox.innerHTML = `<tr><th>Group</th><th class="num">Stocks</th><th class="num">Yahoo = NSE</th><th class="num">First print final</th>
         <th class="num">Yahoo BSE = BSE</th><th class="num">Missing days</th><th class="num">Trend flips (intraday)</th></tr>` +
         groups.map((g) => `<tr><td style="white-space:normal">${esc(GN[g.grp] || g.grp)}</td><td class="num">${g.n_stocks}</td>
-          <td class="num">${p(g.nse_agree_pct)}</td><td class="num">${p(g.nse_first_print_agree_pct, 1)}</td>
+          <td class="num">${p(g.nse_agree_pct)}</td><td class="num">${(g.nse_live_first_prints || 0) >= MIN_LIVE ? p(g.nse_first_print_agree_pct, 1) : `<span class="note" title="only ${g.nse_live_first_prints || 0} prices captured live so far">collecting</span>`}</td>
           <td class="num">${p(g.bse_feed_agree_pct)}</td><td class="num">${p(g.missing_pct)}</td><td class="num">${flip(g.grp)}</td></tr>`).join("");
     }
 
