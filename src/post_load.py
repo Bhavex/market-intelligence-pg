@@ -22,7 +22,7 @@ CHECKS = [
      """SELECT COUNT(*)
         FROM generate_series(CURRENT_DATE - 30, expected_latest_trading_day(), INTERVAL '1 day') AS g(day)
         CROSS JOIN companies c
-        WHERE c.is_active AND is_trading_day(g.day::date)
+        WHERE c.is_active AND c.in_dashboard AND is_trading_day(g.day::date)
           AND NOT EXISTS (SELECT 1 FROM daily_prices p
                           WHERE p.ticker = c.ticker AND p.price_date = g.day::date)""",
      "Trading days in the last 30 (per NSE calendar) with no price row for a stock"),
@@ -41,7 +41,7 @@ CHECKS = [
      """WITH days AS (SELECT DISTINCT price_date FROM daily_prices
                       WHERE price_date >= CURRENT_DATE - 30)
         SELECT COUNT(*) FROM days d CROSS JOIN companies c
-        WHERE c.is_active
+        WHERE c.is_active AND c.in_dashboard
           AND NOT EXISTS (SELECT 1 FROM daily_prices p
                           WHERE p.ticker = c.ticker AND p.price_date = d.price_date)""",
      "Trading days (last 30) where a stock is missing but others have data"),

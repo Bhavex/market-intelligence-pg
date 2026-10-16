@@ -63,8 +63,10 @@ def collect(conn) -> dict:
                                       FROM v_latest_trust ORDER BY trust_score, ticker""")
     run = rows(conn, "SELECT * FROM fragility_runs ORDER BY frag_run_id DESC LIMIT 1")
     d["fragility_run"] = run[0] if run else None
-    d["fragility"] = rows(conn, "SELECT scenario, signal, n_compared, n_flipped, flip_pct, ci_low_pct, ci_high_pct "
+    d["fragility"] = rows(conn, "SELECT universe, scenario, signal, n_compared, n_flipped, flip_pct, ci_low_pct, ci_high_pct "
                                 "FROM v_fragility_latest")
+    d["groups"] = rows(conn, "SELECT * FROM v_quality_by_group ORDER BY array_position(ARRAY['dashboard','large','small'], grp)")
+    d["storage"] = rows(conn, "SELECT database_size, database_bytes, price_versions_rows, audit_log_rows FROM v_storage")[0]
     d["backtest"] = rows(conn, """SELECT scenario, metric, value FROM backtest_sensitivity
                                   WHERE frag_run_id = (SELECT MAX(frag_run_id) FROM fragility_runs)
                                   ORDER BY scenario, metric""")
@@ -101,11 +103,18 @@ def markdown(d: dict) -> str:
         val = d["fragility_run"]["validation"] or {}
         out += ["", "### Signal fragility (flip rate, % of comparisons, 95% Wilson interval)", "",
                 f"Python replica vs database signals: {json.dumps(val)}", "",
-                "| Scenario | Signal | Compared | Flipped | Flip % | 95% CI |", "|---|---|---:|---:|---:|---|"]
-        out += [f"| {r['scenario']} | {SIGNAL_NAMES.get(r['signal'], r['signal'])} | {r['n_compared']:,} | {r['n_flipped']:,} | "
-                f"{r['flip_pct']} | {r['ci_low_pct']}-{r['ci_high_pct']} |" for r in d["fragility"]]
+                "| Group | Scenario | Signal | Compared | Flipped | Flip % | 95% CI |", "|---|---|---|---:|---:|---:|---|"]
+        out += [f"| {r['universe']} | {r['scenario']} | {SIGNAL_NAMES.get(r['signal'], r['signal'])} | {r['n_compared']:,} | "
+                f"{r['n_flipped']:,} | {r['flip_pct']} | {r['ci_low_pct']}-{r['ci_high_pct']} |" for r in d["fragility"]]
         out += ["", "### Backtest sensitivity", "", "| Scenario | Metric | Value |", "|---|---|---:|"]
         out += [f"| {r['scenario']} | {r['metric']} | {r['value']} |" for r in d["backtest"]]
+    if d.get("groups"):
+        out += ["", "### Data quality by group of stocks", "",
+                "| Group | Stocks | Yahoo=NSE % | First print final % | Yahoo BSE=BSE % | Missing sessions % | Value revisions /1000 |",
+                "|---|---:|---:|---:|---:|---:|---:|"]
+        out += [f"| {r['grp']} | {r['n_stocks']} | {r['nse_agree_pct']} | {r['nse_first_print_agree_pct']} | "
+                f"{r['bse_feed_agree_pct']} | {r['missing_pct']} | {r['value_revisions_per_1000']} |" for r in d["groups"]]
+    out += ["", f"Database size: {d['storage']['database_size']} (Neon Free allows 1 GB per project)."]
     grades = [r for r in d["trust_summary"] if r["period"] == "last_30_sessions"]
     out += ["", "**Trust grades, last 30 sessions:** " + (", ".join(f"{r['trust_grade']} {r['pct']}%" for r in grades) or "n/a")]
     return "\n".join(out) + "\n"

@@ -52,7 +52,7 @@ def q(conn, sql, params=None):
 
 def load(conn):
     p = q(conn, """SELECT p.ticker, p.price_date, p.open, p.high, p.low, p.close, p.adj_close, p.volume,
-                          sec.sector_name
+                          sec.sector_name, c.in_dashboard, c.cap_group
                    FROM daily_prices p JOIN companies c ON c.ticker = p.ticker
                    JOIN sectors sec ON sec.sector_id = c.sector_id
                    ORDER BY p.ticker, p.price_date""")
@@ -83,6 +83,7 @@ def features(p: pd.DataFrame, use_raw_close: bool = False) -> pd.DataFrame:
         f = pd.DataFrame({
             "ticker": g["ticker"].values, "price_date": g["price_date"].values,
             "sector": g["sector_name"].values,
+            "in_dashboard": g["in_dashboard"].values.astype(bool), "cap_group": g["cap_group"].values,
             "open": g["open"].values, "high": g["high"].values, "low": g["low"].values,
             "close": g["close"].values, "volume": vol.values,
             "px": px.values, "px_prev": px.shift(1).values,
@@ -304,6 +305,120 @@ def monthly_backtest(f, mom20_by_row, daily_ret_by_row):
     return value, picks
 
 
+GROUPS = {
+    "dashboard": lambda f: f["in_dashboard"].values,           # the 25 stocks on the site (5 sectors)
+    "large": lambda f: (f["cap_group"] == "large").values,     # dashboard + NIFTY 50
+    "small": lambda f: (f["cap_group"] == "small").values,     # 25 NIFTY SMALLCAP 100 stocks
+}
+
+
+def subset(d: dict, mask) -> dict:
+    return {k: v[mask] for k, v in d.items()}
+
+
+def run_scenarios(conn, f, fr, base, base_raw, leader_base, usable, rng, sims, ref, first, hourly_model):
+    """All flip scenarios for one group of stocks (f/fr = its rows; leader_base None = no sector signal)."""
+    results, params = {}, {}
+    lead = leader_base[leader_base.index.isin(usable)] if leader_base is not None else None
+
+    def day_scenario(make):
+        if lead is None:                                   # no sector signal for this group
+            return run_day_scenario_nolead(f, base, usable, rng, sims, make)
+        return run_day_scenario(f, base, leader_base, usable, rng, sims, make)
+
+    day_id = pd.factorize(f["price_date"].values)[0]
+    for name, lo, hi in [("intraday_snapshot", 0.05, 0.95), ("early_snapshot", 0.02, 0.10)]:
+        def make(rng, lo=lo, hi=hi):
+            frac = rng.uniform(lo, hi, int(day_id.max()) + 1)[day_id]       # one run = one moment for all stocks
+            return bridge_price(f, rng, frac) * f["adj_ratio"].values, f["volume"].values * frac
+        results[name] = day_scenario(make)
+        params[name] = {"session_fraction": [lo, hi], "days": int(len(usable))}
+
+    errs, ratios, params["hourly_rebuild"] = hourly_model
+
+    def make_hourly(rng):
+        return f["px"].values * (1 - rng.choice(errs, len(f))), f["volume"].values * rng.choice(ratios, len(f))
+    results["hourly_rebuild"] = day_scenario(make_hourly)
+
+    if len(ref):
+        m = f[["ticker", "price_date"]].merge(ref, on=["ticker", "price_date"], how="left")
+        ratio = f["close"].values / m["close"].values
+        # skip days before a split/bonus: Yahoo's history is rescaled, the exchange's is not
+        has = (m["close"].notna().values & np.isin(f["price_date"].values, usable) & (ratio > 0.8) & (ratio < 1.25))
+        if has.any():
+            px_new = np.where(has, m["close"].values * f["adj_ratio"].values, f["px"].values)
+            vol_new = np.where(has & m["volume"].notna().values, m["volume"].values, f["volume"].values)
+            results["official_vs_yahoo"] = compare(f, base, day_signals(f, px_new, vol_new), has)
+            params["official_vs_yahoo"] = {"stock_days": int(has.sum())}
+            diffs = (f["px"].values[has] / px_new[has]) - 1
+            diffs = diffs[np.isfinite(diffs)]
+            if len(diffs) >= 25:
+                def make_noise(rng):
+                    return f["px"].values * (1 + rng.choice(diffs, len(f))), f["volume"].values
+                results["calibrated_noise"] = day_scenario(make_noise)
+                params["calibrated_noise"] = {"n_differences": int(len(diffs)),
+                                              "share_nonzero": float(np.mean(np.abs(diffs) > 1e-4))}
+
+    if len(first):
+        m = f[["ticker", "price_date"]].merge(first, on=["ticker", "price_date"], how="left")
+        has = m["close"].notna().values
+        if has.any():
+            px_new = np.where(has, pd.to_numeric(m["close"]).values * f["adj_ratio"].values, f["px"].values)
+            vol_new = np.where(has, pd.to_numeric(m["volume"]).fillna(0).values, f["volume"].values)
+            results["observed_first_print"] = compare(f, base, day_signals(f, px_new, vol_new), has)
+            params["observed_first_print"] = {"stock_days": int(has.sum())}
+
+    mask = np.isin(f["price_date"].values, usable)
+    lb = lead if lead is not None else None
+    lr = sector_leader(fr, base_raw["mom20"]).pipe(lambda x: x[x.index.isin(usable)]) if lead is not None else None
+    results["adjustment_basis"] = compare(f, base, base_raw, mask, lb, lr)
+    return results, params
+
+
+def run_day_scenario_nolead(f, base, eligible_days, rng, sims, make_inputs):
+    """run_day_scenario without the sector signal (groups whose 'sectors' are many small industries)."""
+    tallies = {}
+    days = f["price_date"].values
+    in_days = np.isin(days, eligible_days)
+    day_id = pd.factorize(days)[0]
+    n_days = int(day_id.max()) + 1
+    for sim in range(sims):
+        px_new, vol_new = make_inputs(rng)
+        pert = day_signals(f, np.where(in_days, px_new, f["px"].values), np.where(in_days, vol_new, f["volume"].values))
+        compare(f, base, pert, in_days, cluster=day_id + sim * n_days, tallies=tallies)
+    return tallies
+
+
+def backtest_sensitivity_for(f, base, rng, sims):
+    """Monthly 'hold the strongest sector' backtest (dashboard stocks) with wrong month-end data."""
+    bt = {}
+    ret = f["px"].values / f["px_prev"].values - 1
+    v0, picks0 = monthly_backtest(f, base["mom20"], ret)
+    bt["baseline"] = {"final_value_rs": round(v0, 2), "months": len(picks0)}
+    month_ends = set(f.groupby(f["price_date"].dt.to_period("M"))["price_date"].max())
+    me = np.array(list(month_ends), dtype="datetime64[ns]")
+    is_me = np.isin(f["price_date"].values, me)
+    bt_day = pd.factorize(f["price_date"].values)[0]
+    for q_rate in (1.0, 0.25, 0.05):
+        vals, changed, n_dec = [], 0, 0
+        for _ in range(sims * 5):
+            frac = rng.uniform(0.05, 0.95, int(bt_day.max()) + 1)[bt_day]
+            price = bridge_price(f, rng, frac) * f["adj_ratio"].values
+            hit = is_me & np.isin(f["price_date"].values, me[rng.random(len(me)) < q_rate])
+            pert = day_signals(f, np.where(hit, price, f["px"].values),
+                               np.where(hit, f["volume"].values * frac, f["volume"].values))
+            v, picks = monthly_backtest(f, pert["mom20"], ret)
+            vals.append(v)
+            changed += sum(picks.get(k) != picks0[k] for k in picks0)
+            n_dec += len(picks0)
+        bt[f"monthend_snapshot_{int(q_rate * 100)}pct"] = {
+            "pick_change_rate": round(changed / max(n_dec, 1), 6),
+            "final_value_median": round(float(np.median(vals)), 2),
+            "final_value_p5": round(float(np.percentile(vals, 5)), 2),
+            "final_value_p95": round(float(np.percentile(vals, 95)), 2)}
+    return bt
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sims", type=int, default=20, help="repetitions of each random scenario")
@@ -315,28 +430,15 @@ def main():
         with pipeline_run(conn, "fragility") as run:
             p, s = load(conn)
             f = features(p)
+            fr = features(p, use_raw_close=True)            # same row order as f
             validation = validate(f, s)
             print("replica vs database:", validation)
             base = day_signals(f, f["px"].values, f["volume"].values)
-            leader_base = sector_leader(f, base["mom20"])
-            days = np.unique(f["price_date"].values)          # datetime64 array (fast np.isin)
-            usable = days[200:]                     # need 200 sessions of history for every signal
-            results, params, bt = {}, {"sims": args.sims, "seed": args.seed,
-                                      "interval": "95% cluster-robust (cluster = contaminated day x simulation)"}, {}
+            base_raw = day_signals(fr, fr["px"].values, fr["volume"].values)
+            params = {"sims": args.sims, "seed": args.seed,
+                      "interval": "95% cluster-robust (cluster = contaminated day x simulation)"}
 
-            # --- intraday snapshot (any time) and early snapshot (first half hour) ---
-            for name, lo, hi in [("intraday_snapshot", 0.05, 0.95), ("early_snapshot", 0.02, 0.10)]:
-                day_id = pd.factorize(f["price_date"].values)[0]
-
-                def make(rng, lo=lo, hi=hi, day_id=day_id):
-                    # one load = one moment: every stock of a day gets the same time f
-                    frac = rng.uniform(lo, hi, int(day_id.max()) + 1)[day_id]
-                    price = bridge_price(f, rng, frac) * f["adj_ratio"].values
-                    return price, f["volume"].values * frac
-                results[name] = run_day_scenario(f, base, leader_base, usable, rng, args.sims, make)
-                params[name] = {"session_fraction": [lo, hi], "days": int(len(usable))}
-
-            # --- hourly rebuild, calibrated on observed revisions when available ---
+            # inputs shared by all groups
             obs = q(conn, """SELECT close_change_bp, new_volume::float / NULLIF(old_volume, 0) AS vol_ratio
                              FROM v_price_revisions
                              WHERE revision_kind IN ('hourly_fill_replaced', 'price_restatement')
@@ -346,91 +448,40 @@ def main():
                 ratios = obs["vol_ratio"].dropna().to_numpy(float)
                 ratios = ratios[(ratios > 0) & np.isfinite(ratios)]
                 ratios = 1 / ratios if len(ratios) else np.array([0.85])
-                params["hourly_rebuild"] = {"calibration": "observed", "n_obs": int(len(obs))}
+                hourly = (errs, ratios, {"calibration": "observed", "n_obs": int(len(obs))})
             else:
-                errs, ratios = rng.normal(0, 4e-4, 1000), np.array([0.85])
-                params["hourly_rebuild"] = {"calibration": "default N(0, 4bp), volume x0.85", "n_obs": int(len(obs))}
-
-            def make_hourly(rng):
-                e = rng.choice(errs, len(f))
-                vr = rng.choice(ratios, len(f))
-                return f["px"].values * (1 - e), f["volume"].values * vr
-            results["hourly_rebuild"] = run_day_scenario(f, base, leader_base, usable, rng, args.sims, make_hourly)
-
-            # --- official exchange data instead of Yahoo, and everyday discrepancies ---
-            ref = q(conn, """SELECT ticker, price_date, close, volume FROM reference_prices
-                             WHERE source = 'NSE'""")
+                hourly = (rng.normal(0, 4e-4, 1000), np.array([0.85]),
+                          {"calibration": "default N(0, 4bp), volume x0.85", "n_obs": int(len(obs))})
+            ref = q(conn, "SELECT ticker, price_date, close, volume FROM reference_prices WHERE source = 'NSE'")
             if len(ref):
                 ref["price_date"] = pd.to_datetime(ref["price_date"])
-                m = f[["ticker", "price_date"]].merge(ref, on=["ticker", "price_date"], how="left")
-                ratio = f["close"].values / m["close"].values
-                # skip days before a split/bonus: Yahoo's history is rescaled, the exchange's is not
-                has = (m["close"].notna().values & np.isin(f["price_date"].values, usable)
-                       & (ratio > 0.8) & (ratio < 1.25))
-                px_new = np.where(has, m["close"].values * f["adj_ratio"].values, f["px"].values)
-                vol_new = np.where(has & m["volume"].notna().values, m["volume"].values, f["volume"].values)
-                pert = day_signals(f, px_new, vol_new)
-                results["official_vs_yahoo"] = compare(f, base, pert, has)
-                params["official_vs_yahoo"] = {"stock_days": int(has.sum())}
-                diffs = (f["px"].values[has] / px_new[has]) - 1
-                diffs = diffs[np.isfinite(diffs)]
-                if len(diffs) >= 25:
-                    def make_noise(rng):
-                        return f["px"].values * (1 + rng.choice(diffs, len(f))), f["volume"].values
-                    results["calibrated_noise"] = run_day_scenario(f, base, leader_base, usable, rng, args.sims, make_noise)
-                    params["calibrated_noise"] = {"n_differences": int(len(diffs)),
-                                                  "share_nonzero": float(np.mean(np.abs(diffs) > 1e-4))}
-
-            # --- what we actually received first vs the settled value ---
-            first = q(conn, """SELECT ticker, price_date, close, volume, n FROM (
+            first = q(conn, """SELECT ticker, price_date, close, volume FROM (
                                    SELECT ticker, price_date, close, volume,
                                           ROW_NUMBER() OVER (PARTITION BY ticker, price_date ORDER BY sys_from) AS k,
                                           COUNT(*)     OVER (PARTITION BY ticker, price_date) AS n
                                    FROM price_versions) v
                                WHERE k = 1 AND n > 1""")
-            first = first[first["n"] > 1]
             if len(first):
                 first["price_date"] = pd.to_datetime(first["price_date"])
-                m = f[["ticker", "price_date"]].merge(first, on=["ticker", "price_date"], how="left")
-                has = m["close"].notna().values
-                px_new = np.where(has, pd.to_numeric(m["close"]).values * f["adj_ratio"].values, f["px"].values)
-                vol_new = np.where(has, pd.to_numeric(m["volume"]).fillna(0).values, f["volume"].values)
-                pert = day_signals(f, px_new, vol_new)
-                results["observed_first_print"] = compare(f, base, pert, has)
-                params["observed_first_print"] = {"stock_days": int(has.sum())}
 
-            # --- adjustment basis: whole history on raw close ---
-            fr = features(p, use_raw_close=True)
-            pert = day_signals(fr, fr["px"].values, fr["volume"].values)
-            mask = np.isin(f["price_date"].values, usable)
-            results["adjustment_basis"] = compare(f, base, pert, mask, leader_base[leader_base.index.isin(usable)],
-                                                  sector_leader(fr, pert["mom20"]).pipe(lambda x: x[x.index.isin(usable)]))
-
-            # --- backtest: wrong month-end data ---
-            ret = f["px"].values / f["px_prev"].values - 1
-            v0, picks0 = monthly_backtest(f, base["mom20"], ret)
-            bt["baseline"] = {"final_value_rs": round(v0, 2), "months": len(picks0)}
-            month_ends = set(f.groupby(f["price_date"].dt.to_period("M"))["price_date"].max())
-            is_me = np.isin(f["price_date"].values, np.array(list(month_ends), dtype="datetime64[ns]"))
-            for q_rate in (1.0, 0.25, 0.05):
-                vals, changed, n_dec = [], 0, 0
-                bt_day = pd.factorize(f["price_date"].values)[0]
-                for _ in range(args.sims * 5):
-                    frac = rng.uniform(0.05, 0.95, int(bt_day.max()) + 1)[bt_day]
-                    price = bridge_price(f, rng, frac) * f["adj_ratio"].values
-                    hit_days = np.array([d for d in month_ends if rng.random() < q_rate], dtype="datetime64[ns]")
-                    hit = is_me & np.isin(f["price_date"].values, hit_days)
-                    pert = day_signals(f, np.where(hit, price, f["px"].values),
-                                       np.where(hit, f["volume"].values * frac, f["volume"].values))
-                    v, picks = monthly_backtest(f, pert["mom20"], ret)
-                    vals.append(v)
-                    changed += sum(picks.get(k) != picks0[k] for k in picks0)
-                    n_dec += len(picks0)
-                key = f"monthend_snapshot_{int(q_rate * 100)}pct"
-                bt[key] = {"pick_change_rate": round(changed / max(n_dec, 1), 6),
-                           "final_value_median": round(float(np.median(vals)), 2),
-                           "final_value_p5": round(float(np.percentile(vals, 5)), 2),
-                           "final_value_p95": round(float(np.percentile(vals, 95)), 2)}
+            results, bt = {}, {}
+            for group, pick in GROUPS.items():
+                mask = pick(f)
+                if mask.sum() == 0:
+                    continue
+                fg, frg = f[mask].reset_index(drop=True), fr[mask].reset_index(drop=True)
+                bg, brg = subset(base, mask), subset(base_raw, mask)
+                days = np.unique(fg["price_date"].values)
+                usable = days[200:]                         # 200 sessions of history for every signal
+                if len(usable) == 0:
+                    continue
+                leader = sector_leader(fg, bg["mom20"]) if group == "dashboard" else None
+                res, par = run_scenarios(conn, fg, frg, bg, brg, leader, usable, rng, args.sims, ref, first, hourly)
+                for scen, r in res.items():
+                    results[(group, scen)] = r
+                params[group] = {"n_stocks": int(fg["ticker"].nunique()), "n_stock_days": int(len(fg)), **par}
+                if group == "dashboard":
+                    bt = backtest_sensitivity_for(fg, bg, rng, args.sims)
 
             # --- store ---
             through = f["price_date"].max().date()
@@ -440,22 +491,23 @@ def main():
                 (run["run_id"], through, int(len(f)), args.seed, json.dumps(_finite(params)), json.dumps(_finite(validation)),
                  "src/fragility.py")).fetchone()[0]
             rows = []
-            for scen, res in results.items():
+            for (group, scen), res in results.items():
                 for sig, t in res.items():
                     k, n, (pr, lo, hi) = t.result()
-                    rows.append((frag_id, scen, sig, n, k, pr, lo, hi))
-                    print(f"{scen:22} {sig:16} {k:>8}/{n:<8} " + (
+                    rows.append((frag_id, group, scen, sig, n, k, pr, lo, hi))
+                    print(f"{group:9} {scen:22} {sig:16} {k:>8}/{n:<8} " + (
                         f"{100 * pr:7.3f}%  [{100 * lo:.3f}, {100 * hi:.3f}]" if pr is not None else "   n/a"))
             with conn.cursor() as cur:
-                cur.executemany("""INSERT INTO fragility_results (frag_run_id, scenario, signal, n_compared,
-                                   n_flipped, flip_rate, ci_low, ci_high) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
+                cur.executemany("""INSERT INTO fragility_results (frag_run_id, universe, scenario, signal, n_compared,
+                                   n_flipped, flip_rate, ci_low, ci_high) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
                 cur.executemany("""INSERT INTO backtest_sensitivity (frag_run_id, scenario, metric, value)
                                    VALUES (%s,%s,%s,%s)""",
                                 [(frag_id, sc, k, _finite(v)) for sc, d in bt.items() for k, v in d.items()])
             conn.commit()
             print("backtest:", json.dumps(bt))
             run["rows_upserted"] = len(rows)
-            run["message"] = (f"fragility run {frag_id}: {len(results)} scenarios on {len(f)} stock-days; "
+            run["message"] = (f"fragility run {frag_id}: {len({g for g, _ in results})} groups, "
+                              f"{len(results)} group-scenarios on {len(f)} stock-days; "
                               f"replica trend match {validation.get('trend_match_pct')}%")
 
 

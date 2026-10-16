@@ -40,7 +40,6 @@ def main():
             for t in tickers:
                 # normally heal_start; further back if the stored data is older than that (a missed gap)
                 start = min(heal_start, latest[t]) if t in latest else DEFAULT_START
-                earliest_start = min(earliest_start, start)
                 try:
                     f = fetch_rows_ex(t, start)
                     s = upsert_rows(conn, f.daily)
@@ -50,6 +49,8 @@ def main():
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
                         totals[k] += v
                     run["rows_upserted"] += inserted + updated                 # rows actually written
+                    if t in latest or inserted:   # a stock with no data at all must not force a full recompute
+                        earliest_start = min(earliest_start, start)
                     note = f" (updated: {', '.join(map(str, s.updated_dates))})" if s.updated_dates else ""
                     held = f", held back {f.held_back} (session not final)" if f.held_back else ""
                     fb = f", hourly fallback offered for {len(f.fallback)} gap day(s) (insert-only)" if f.fallback else ""
@@ -68,7 +69,10 @@ def main():
             print(summary)
             print(run["message"])
 
-        if len(run["tickers_failed"]) > len(tickers) // 2:
+        dash = {r[0] for r in conn.execute("SELECT ticker FROM companies WHERE is_active AND in_dashboard")}
+        dash_failed = [t for t in run["tickers_failed"] if t in dash]
+        # the 25 dashboard stocks are judged on their own, so research stocks cannot hide their failures
+        if len(run["tickers_failed"]) > len(tickers) // 2 or len(dash_failed) > len(dash) // 2:
             raise SystemExit(f"Too many failures: {run['tickers_failed']}")  # makes the Action go red
 
 

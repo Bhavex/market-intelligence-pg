@@ -37,6 +37,8 @@ def main():
                     if s.updated_dates:
                         first = min(s.updated_dates)
                         earliest = first if earliest is None else min(earliest, first)
+                    if s.inserted + g.inserted:                 # a new stock or recovered days: recompute all
+                        earliest = start
                     print(f"[{i}/{len(tickers)}] {t}: {s.total + g.total} rows checked, "
                           f"{s.updated} revised, {s.inserted + g.inserted} new")
                 except Exception as exc:
@@ -57,7 +59,9 @@ def main():
                               + (", ".join(f"{k} {n}" for k, n in kinds) or "no revisions"))
             print(run["message"])
 
-        if len(run["tickers_failed"]) > len(tickers) // 2:
+        dash = {r[0] for r in conn.execute("SELECT ticker FROM companies WHERE is_active AND in_dashboard")}
+        dash_failed = [t for t in run["tickers_failed"] if t in dash]
+        if len(run["tickers_failed"]) > len(tickers) // 2 or len(dash_failed) > len(dash) // 2:
             raise SystemExit(f"Too many failures: {run['tickers_failed']}")
 
 

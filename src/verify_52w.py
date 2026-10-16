@@ -111,6 +111,15 @@ def run_null_prefix(conn) -> bool:
         GROUP BY p.ticker ORDER BY p.ticker""").fetchall()
     ok, exact = True, 0
     for ticker, n_adj_null, first_date, n_null in rows:
+        if first_date is None:
+            # fewer than 253 sessions so far (e.g. a recently listed research stock): every row must be NULL
+            total = conn.execute("SELECT COUNT(*) FROM signals WHERE ticker = %s", (ticker,)).fetchone()[0]
+            if n_null == total and total <= 252 + n_adj_null * 253:
+                print(f"ok    {ticker}: only {total} sessions so far, all NULL as expected")
+            else:
+                ok = False
+                print(f"FAIL  {ticker}: no 52-week value yet but {total} sessions")
+            continue
         lead = conn.execute("SELECT COUNT(*) FROM signals WHERE ticker = %s AND signal_date < %s", (ticker, first_date)).fetchone()[0]
         if lead == 252 and n_null == 252:
             exact += 1

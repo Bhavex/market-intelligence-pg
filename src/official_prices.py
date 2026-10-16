@@ -194,9 +194,12 @@ def main():
 
             # 'not_published' is only final for old dates: the exchanges post the file in the evening,
             # so a 404 at 17:10 IST must be retried by the next run.
+            # A downloaded file is done unless stocks were added to the universe after it was read
+            # (src/universe.py): then it is read again once, so the new stocks get their official history.
             done = {(s, d) for s, d in conn.execute(
                 """SELECT source, file_date FROM reference_fetch_log
-                   WHERE status = 'ok' OR (status = 'not_published' AND file_date < CURRENT_DATE - 5)""").fetchall()}
+                   WHERE (status = 'ok' AND fetched_at >= (SELECT MAX(added_at) FROM companies WHERE is_active))
+                      OR (status = 'not_published' AND file_date < CURRENT_DATE - 5)""").fetchall()}
             days = target_days(conn, args.days, args.date)
             fetchers = {s: Fetcher(s) for s in sources}
             counts = {s: {"ok": 0, "not_published": 0, "blocked": 0, "error": 0, "skipped": 0} for s in sources}

@@ -149,7 +149,7 @@ def main():
         counts = conn.execute("""
             SELECT (SELECT COUNT(*) FROM daily_prices), (SELECT COUNT(*) FROM signals),
                    (SELECT MIN(price_date) FROM daily_prices),
-                   (SELECT COUNT(*) FROM companies WHERE is_active),
+                   (SELECT COUNT(*) FROM companies WHERE is_active AND in_dashboard),
                    (SELECT COUNT(DISTINCT started_at::date) FROM pipeline_runs
                      WHERE job_name = 'daily_update' AND status IN ('success','partial'))""").fetchone()
         snap = q(conn, "SELECT * FROM v_latest_snapshot")
@@ -163,7 +163,7 @@ def main():
             FROM signals s
             JOIN companies c   ON c.ticker = s.ticker
             JOIN sectors   sec ON sec.sector_id = c.sector_id
-            WHERE s.signal_date = %s AND s.breakout_52w
+            WHERE s.signal_date = %s AND s.breakout_52w AND c.in_dashboard
             ORDER BY s.strong_breakout DESC, s.ticker""", (latest,))
         write("summary.json", {
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="minutes"),
