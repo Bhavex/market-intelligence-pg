@@ -132,6 +132,31 @@ by one factor leaves every return and every price-to-average ratio computed *ent
 entirely after that date unchanged; only windows that straddle the ex-date move. The
 `adjustment_basis` scenario measures exactly that residual.
 
+### 2.7 Research universe, second feed, by-group results — `sql/11_research.sql`
+* **Universe.** `src/universe.py` reads NSE's own index files (NIFTY 50 and NIFTY Smallcap 100) and
+  adds every NIFTY 50 member plus 25 small caps (Smallcap 100 sorted by symbol, every 4th — a fixed,
+  reproducible sample). `companies.cap_group` (large/small), `index_membership` and `in_dashboard`
+  record this. Added stocks have `in_dashboard = FALSE`: the dashboard, Power BI views and the
+  backtest still show the original 25 stocks; the research views use everything.
+* **Second free feed.** `src/alt_feed.py` stores Yahoo's BSE listing (`SYMBOL.BO`) in
+  `alt_feed_prices`, keeping the first value received and counting later changes;
+  `v_feed_agreement` compares it with the official BSE file. This tests whether the findings are
+  about one listing or about the provider.
+* **By group.** `v_quality_by_group` reports, for dashboard / large / small: agreement with NSE,
+  first-print agreement, agreement of the BSE feed, sessions present in the official file but missing
+  in Yahoo, value revisions per 1,000 stock-days, and dividend rescales. The fragility study is run
+  separately for each group (`fragility_results.universe`), so "are small caps less trustworthy, and
+  do their signals flip more?" is answered with intervals, not guessed.
+* **Storage.** `v_storage` reports the size of each research table (the database must stay inside
+  the free 1 GB).
+
+### 2.8 Open dataset — `src/export_dataset.py`, *Publish research dataset* workflow
+Only derived measurements are published (differences in bp, flags, timings, revision kinds, missing
+sessions, simulation results) with a datasheet and SHA-256 checksums; raw prices are not
+redistributed. The workflow attaches a zip to a GitHub release (`dataset-YYYY-MM-DD`); linking the
+repository to Zenodo gives each release a DOI. Licence of the derived data: CC BY 4.0. Cite via
+`CITATION.cff`.
+
 ## 3. How to run
 
 | What | How |
@@ -139,6 +164,9 @@ entirely after that date unchanged; only windows that straddle the ex-date move.
 | everything, weekly | *Data trust study* workflow (Sundays, or **Run workflow**) |
 | first run | Run workflow with `official_days = 250` (≈ one year of exchange files) |
 | daily | the daily workflow also fetches the last 5 official files |
+| research universe | `python src/universe.py` (or `--file NIFTY50 ind_nifty50list.csv` for a file downloaded by hand) |
+| second feed | `python src/alt_feed.py --days 400` (first time), daily workflow does the last 10 days |
+| open dataset | *Publish research dataset* workflow, or `python src/export_dataset.py --out dataset` |
 | report | `python src/trust_report.py` (Markdown) or `--json` |
 | tests | `python -m unittest discover -s tests -v` (database tests need `TEST_DATABASE_URL`) |
 | a file downloaded by hand | `python src/official_prices.py --file NSE BhavCopy_….csv.zip --date 2026-10-15` |
@@ -151,6 +179,7 @@ entirely after that date unchanged; only windows that straddle the ex-date move.
   loaded with `--file`.
 * **The intraday model is a model.** A Brownian bridge inside the day's range is a standard,
   simple assumption, not the true path; the early-snapshot scenario brackets the real 09:39 case.
-* **Survivorship and size.** 25 of today's large caps; results may differ for small caps, where data
-  errors are probably more common.
-* **One free source.** The method applies to any feed; the numbers are for Yahoo Finance's NSE data.
+* **Survivorship and size.** Today's index members only (no delisted stocks); 25 small caps are a
+  sample of the Smallcap 100, not all small caps.
+* **One free provider.** Two listings (NSE and BSE) of one provider, Yahoo Finance; the method
+  applies to any feed.
