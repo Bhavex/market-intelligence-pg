@@ -16,7 +16,7 @@ WITH picked_stocks AS MATERIALIZED (
   SELECT DISTINCT ON (c.sector_id) c.ticker, c.company_name, s.sector_name
   FROM companies c
   JOIN sectors s USING (sector_id)
-  WHERE c.is_active
+  WHERE c.is_active AND c.in_dashboard
   ORDER BY c.sector_id, random()
 ),
 picked_dates AS MATERIALIZED (
@@ -128,7 +128,7 @@ SELECT s.signal_date,
 FROM signals s
 JOIN companies c   ON c.ticker = s.ticker
 JOIN sectors   sec ON sec.sector_id = c.sector_id
-WHERE s.is_anomaly
+WHERE s.is_anomaly AND c.in_dashboard
 ORDER BY ABS(s.return_1d) DESC NULLS LAST
 LIMIT 20;
 
@@ -196,7 +196,7 @@ base AS (
   FROM latest l
   JOIN companies c   ON c.ticker = l.ticker
   JOIN sectors   sec ON sec.sector_id = c.sector_id
-  WHERE c.is_active
+  WHERE c.is_active AND c.in_dashboard
 ),
 med AS (
   SELECT sector_name,
