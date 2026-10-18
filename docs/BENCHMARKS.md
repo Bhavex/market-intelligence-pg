@@ -1,26 +1,26 @@
 # Query performance benchmarks
 
-_Generated automatically by `src/benchmark.py` on 11 Oct 2026 (PostgreSQL 17.11 on Neon, free tier). Median of 7 runs after a warm-up; every run is wrapped in a rolled-back transaction._
+_Generated automatically by `src/benchmark.py` on 18 Oct 2026 (PostgreSQL 17.11 on Neon, free tier). Median of 7 runs after a warm-up; every run is wrapped in a rolled-back transaction._
 
 | Test | Before | After | Speed-up |
 |---|---|---|---|
-| B-tree index: one stock, last 12 months | Forced sequential scan: 4.03 ms | Primary-key index: 0.12 ms | **33.3×** |
-| Partial index: anomalies, last 90 days | Forced sequential scan: 6.51 ms | idx_signals_anomaly (partial): 0.14 ms | **44.9×** |
-| Materialized view: sector stats, last 12 months | Plain view (aggregates every time): 34.45 ms | Materialized view (precomputed): 0.25 ms | **136.2×** |
-| Partitioning: one year, average close per stock | Normal table (scans all years): 5.21 ms | Year-partitioned table (pruned to 1 of 13 partitions): 2.09 ms | **2.5×** |
+| B-tree index: one stock, last 12 months | Forced sequential scan: 14.81 ms | Primary-key index: 0.11 ms | **135.9×** |
+| Partial index: anomalies, last 90 days | Forced sequential scan: 25.93 ms | idx_signals_anomaly (partial): 0.30 ms | **87.0×** |
+| Materialized view: sector stats, last 12 months | Plain view (aggregates every time): 106.55 ms | Materialized view (precomputed): 0.23 ms | **457.3×** |
+| Partitioning: one year, average close per stock | Normal table (scans all years): 18.35 ms | Year-partitioned table (pruned to 1 of 13 partitions): 4.75 ms | **3.9×** |
 
 ## Query plans used
 
 **B-tree index: one stock, last 12 months**
 - Forced sequential scan: Seq Scan (daily_prices)
-- Primary-key index: Index Scan (daily_prices_pkey)
+- Primary-key index: Bitmap Heap Scan (daily_prices), Bitmap Index Scan (daily_prices_pkey)
 
 **Partial index: anomalies, last 90 days**
 - Forced sequential scan: Seq Scan (signals)
 - idx_signals_anomaly (partial): Bitmap Heap Scan (signals), Bitmap Index Scan (idx_signals_anomaly)
 
 **Materialized view: sector stats, last 12 months**
-- Plain view (aggregates every time): 5 scans: Index Only Scan (daily_prices_pkey), Seq Scan (cities), …
+- Plain view (aggregates every time): 7 scans: Bitmap Heap Scan (daily_prices), Bitmap Index Scan (idx_daily_prices_date), …
 - Materialized view (precomputed): Bitmap Heap Scan (mv_sector_daily), Bitmap Index Scan (ux_mv_sector_daily)
 
 **Partitioning: one year, average close per stock**
@@ -29,21 +29,29 @@ _Generated automatically by `src/benchmark.py` on 11 Oct 2026 (PostgreSQL 17.11 
 
 ## Signal engine
 
-`refresh_signals()` recomputes 30 days of signals for all stocks in **101 ms** (window functions over ~400 days of look-back per stock).
+`refresh_signals()` recomputes 30 days of signals for all stocks in **4680 ms** (window functions over ~400 days of look-back per stock).
 
 ## Table sizes
 
 | Table | Rows (approx.) | Size on disk |
 |---|---|---|
-| `signals` | 72,675 | 12 MB |
-| `daily_prices` | 72,675 | 10 MB |
-| `mv_sector_daily` | 14,535 | 2024 kB |
-| `pipeline_runs` | 5 | 48 kB |
-| `sectors` | 5 | 48 kB |
+| `price_versions` | 217,795 | 85 MB |
+| `signals` | 211,778 | 71 MB |
+| `daily_prices` | 211,778 | 34 MB |
+| `reference_prices` | 39,644 | 9552 kB |
+| `audit_log` | 6,198 | 4336 kB |
+| `mv_sector_daily` | 14,560 | 2376 kB |
+| `alt_feed_prices` | 12,096 | 2056 kB |
+| `reference_fetch_log` | 502 | 152 kB |
+| `fragility_results` | 303 | 96 kB |
+| `companies` | 81 | 96 kB |
+| `sectors` | 22 | 80 kB |
+| `pipeline_runs` | 66 | 80 kB |
+| `fundamentals` | 106 | 56 kB |
 | `cities` | 9 | 40 kB |
-| `companies` | 25 | 40 kB |
-| `fundamentals` | 25 | 24 kB |
-| `audit_log` | 0 | 24 kB |
+| `backtest_sensitivity` | 42 | 32 kB |
+| `market_holidays` | 16 | 32 kB |
+| `fragility_runs` | 3 | 32 kB |
 
 ## How the partitioned table is built
 
