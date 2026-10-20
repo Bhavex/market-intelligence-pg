@@ -128,6 +128,15 @@ BEGIN
     END IF;
 END $$;
 
+-- Robustness check: a moving-block bootstrap over trading days (errors on nearby days may be related).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'fragility_results' AND column_name = 'boot_low') THEN
+        ALTER TABLE fragility_results ADD COLUMN boot_low NUMERIC, ADD COLUMN boot_high NUMERIC;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS backtest_sensitivity (
     frag_run_id    BIGINT       NOT NULL REFERENCES fragility_runs(frag_run_id) ON DELETE CASCADE,
     scenario       VARCHAR(40)  NOT NULL,
@@ -142,7 +151,9 @@ SELECT r.scenario, r.signal, r.n_compared, r.n_flipped,
        ROUND(r.ci_low * 100, 3)    AS ci_low_pct,
        ROUND(r.ci_high * 100, 3)   AS ci_high_pct,
        f.created_at, f.data_through,
-       r.universe                                  -- appended last: the view's earlier columns never change
+       r.universe,                                 -- appended last: the view's earlier columns never change
+       ROUND(r.boot_low * 100, 3)  AS boot_low_pct,
+       ROUND(r.boot_high * 100, 3) AS boot_high_pct
 FROM fragility_results r
 JOIN fragility_runs f ON f.frag_run_id = r.frag_run_id
 WHERE r.frag_run_id = (SELECT MAX(frag_run_id) FROM fragility_runs)
