@@ -1,5 +1,6 @@
 # NSE Sector Intelligence: a self-updating market database
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23495953.svg)](https://doi.org/10.5281/zenodo.23495953)
 [![Daily market update](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/daily_update.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/daily_update.yml)
 [![Publish dashboard site](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml)
 
