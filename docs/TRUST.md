@@ -122,7 +122,7 @@ Unverified history cannot reach grade A by design: A means *checked against the 
 | `observed_first_print` | the first version actually received vs the settled value | `price_versions` |
 | `adjustment_basis` | whole history on raw close instead of dividend-adjusted close | — |
 
-4. **Uncertainty.** One error hits every stock of a day at once, so stock-days are not independent. Each flip rate has a 95% cluster-robust interval (cluster = contaminated day × simulation; ratio-estimator standard error, Wilson on clusters when no or all rows flip).
+4. **Uncertainty.** One error hits every stock of a day at once, so stock-days are not independent. Each flip rate has a 95% cluster-robust interval (cluster = contaminated day × simulation; ratio-estimator standard error, Wilson on clusters when no or all rows flip). As a robustness check, a moving-block bootstrap over trading days (20-day blocks, 1,000 resamples, all simulations of a day kept together) gives a second interval that also allows for dependence between nearby days (`boot_low`, `boot_high`).
 5. **Decisions, not just flags.** The monthly "hold the strongest sector" backtest is re-run with
    corrupted month-end data (every month, 25% of months, 5% of months) and reports how often the
    held sector changes and the resulting range of the final value of ₹100.
