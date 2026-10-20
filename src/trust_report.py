@@ -63,7 +63,7 @@ def collect(conn) -> dict:
                                       FROM v_latest_trust ORDER BY trust_score, ticker""")
     run = rows(conn, "SELECT * FROM fragility_runs ORDER BY frag_run_id DESC LIMIT 1")
     d["fragility_run"] = run[0] if run else None
-    d["fragility"] = rows(conn, "SELECT universe, scenario, signal, n_compared, n_flipped, flip_pct, ci_low_pct, ci_high_pct "
+    d["fragility"] = rows(conn, "SELECT universe, scenario, signal, n_compared, n_flipped, flip_pct, ci_low_pct, ci_high_pct, boot_low_pct, boot_high_pct "
                                 "FROM v_fragility_latest")
     d["groups"] = rows(conn, "SELECT * FROM v_quality_by_group ORDER BY array_position(ARRAY['dashboard','large','small'], grp)")
     d["storage"] = rows(conn, "SELECT database_size, database_bytes, price_versions_rows, audit_log_rows FROM v_storage")[0]
@@ -103,9 +103,11 @@ def markdown(d: dict) -> str:
         val = d["fragility_run"]["validation"] or {}
         out += ["", "### Signal fragility (flip rate, % of comparisons, 95% cluster-robust interval)", "",
                 f"Python replica vs database signals: {json.dumps(val)}", "",
-                "| Group | Scenario | Signal | Compared | Flipped | Flip % | 95% CI |", "|---|---|---|---:|---:|---:|---|"]
+                "| Group | Scenario | Signal | Compared | Flipped | Flip % | 95% CI | Block bootstrap 95% |", "|---|---|---|---:|---:|---:|---|---|"]
         out += [f"| {r['universe']} | {r['scenario']} | {SIGNAL_NAMES.get(r['signal'], r['signal'])} | {r['n_compared']:,} | "
-                f"{r['n_flipped']:,} | {r['flip_pct']} | {r['ci_low_pct']}-{r['ci_high_pct']} |" for r in d["fragility"]]
+                f"{r['n_flipped']:,} | {r['flip_pct']} | {r['ci_low_pct']}-{r['ci_high_pct']} | "
+                f"{'' if r.get('boot_low_pct') is None else str(r['boot_low_pct']) + '-' + str(r['boot_high_pct'])} |"
+                for r in d["fragility"]]
         out += ["", "### Backtest sensitivity", "", "| Scenario | Metric | Value |", "|---|---|---:|"]
         out += [f"| {r['scenario']} | {r['metric']} | {r['value']} |" for r in d["backtest"]]
     if d.get("groups"):

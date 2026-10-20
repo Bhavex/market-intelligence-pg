@@ -181,6 +181,10 @@ def validate(f: pd.DataFrame, s: pd.DataFrame) -> dict:
 
 
 # ---------------------------------------------------------------- statistics
+BOOT_BLOCK = 20     # trading days per block (about one month)
+BOOT_REPS = 1000
+
+
 def wilson(k, n, z=1.96):
     if n == 0:
         return (None, None, None)
@@ -196,17 +200,47 @@ class Tally:
     day are NOT independent: the interval is computed over clusters (day x simulation), not rows."""
 
     def __init__(self):
-        self.k, self.n = [], []
+        self.k, self.n, self.d = [], [], []
 
-    def add(self, k_by_cluster, n_by_cluster):
+    def add(self, k_by_cluster, n_by_cluster, day_by_cluster):
         keep = n_by_cluster > 0
         self.k.append(k_by_cluster[keep])
         self.n.append(n_by_cluster[keep])
+        self.d.append(np.asarray(day_by_cluster)[keep].astype("datetime64[D]"))
+
+    def arrays(self):
+        if not self.k:
+            return np.array([]), np.array([]), np.array([], "datetime64[D]")
+        return np.concatenate(self.k), np.concatenate(self.n), np.concatenate(self.d)
 
     def result(self):
-        k = np.concatenate(self.k) if self.k else np.array([])
-        n = np.concatenate(self.n) if self.n else np.array([])
+        k, n, _ = self.arrays()
         return int(k.sum()), int(n.sum()), ratio_ci(k, n)
+
+    def bootstrap(self, rng, block=BOOT_BLOCK, reps=BOOT_REPS):
+        return block_bootstrap(*self.arrays(), rng, block, reps)
+
+
+def block_bootstrap(k, n, d, rng, block, reps):
+    """Robustness check for ratio_ci: a moving-block bootstrap over trading days. All clusters of a day
+    (every simulation) are resampled together, in runs of `block` consecutive trading days, so both the
+    same-day dependence and any dependence between nearby days are kept. Returns the 2.5/97.5 percentiles
+    of sum(k)/sum(n), or (None, None) when there are too few days."""
+    if len(n) == 0 or k.sum() == 0 or k.sum() == n.sum():
+        return (None, None)      # nothing (or everything) flips: resampling cannot vary; ratio_ci's Wilson bound stands
+    days, inv = np.unique(d, return_inverse=True)
+    kd = np.bincount(inv, weights=k, minlength=len(days))
+    nd = np.bincount(inv, weights=n, minlength=len(days))
+    n_days = len(days)
+    if n_days < 2 * block:
+        return (None, None)
+    n_blocks = int(math.ceil(n_days / block))
+    starts = rng.integers(0, n_days - block + 1, size=(reps, n_blocks))
+    pick = (starts[:, :, None] + np.arange(block)).reshape(reps, -1)
+    num, den = kd[pick].sum(axis=1), nd[pick].sum(axis=1)
+    ratio = num / np.where(den > 0, den, np.nan)
+    lo, hi = np.nanpercentile(ratio, [2.5, 97.5])
+    return (float(lo), float(hi))
 
 
 def ratio_ci(k, n, z=1.96):
@@ -231,11 +265,13 @@ def compare(f, base, pert, idx, leader_base=None, leader_pert=None, cluster=None
     cl = (np.asarray(cluster) if cluster is not None else
           pd.factorize(f["price_date"].values)[0])[idx]
     width = int(cl.max()) + 1 if len(cl) else 0
+    day_of = np.full(width, np.datetime64("NaT"), "datetime64[D]")      # the trading day of each cluster
+    day_of[cl] = f["price_date"].values[idx].astype("datetime64[D]")
 
     def tally(sig, flipped, ok):
         k = np.bincount(cl[ok], weights=flipped[ok].astype(float), minlength=width)
         n = np.bincount(cl[ok], minlength=width).astype(float)
-        tallies.setdefault(sig, Tally()).add(k, n)
+        tallies.setdefault(sig, Tally()).add(k, n, day_of)
 
     for sig in ["trend", "is_anomaly", "rsi_zone", "momentum_sign"]:
         a, b = base[sig][idx], pert[sig][idx]
@@ -250,7 +286,8 @@ def compare(f, base, pert, idx, leader_base=None, leader_pert=None, cluster=None
     if leader_base is not None:
         common = leader_base.index.intersection(leader_pert.index)
         flips = (leader_base[common] != leader_pert[common]).values.astype(float)
-        tallies.setdefault("sector_leader", Tally()).add(flips, np.ones(len(flips)))   # one day = one cluster
+        tallies.setdefault("sector_leader", Tally()).add(flips, np.ones(len(flips)),    # one day = one cluster
+                                                         pd.to_datetime(common).values)
     return tallies
 
 
@@ -436,7 +473,8 @@ def main():
             base = day_signals(f, f["px"].values, f["volume"].values)
             base_raw = day_signals(fr, fr["px"].values, fr["volume"].values)
             params = {"sims": args.sims, "seed": args.seed,
-                      "interval": "95% cluster-robust (cluster = contaminated day x simulation)"}
+                      "interval": "95% cluster-robust (cluster = contaminated day x simulation)",
+                      "bootstrap": {"kind": "moving-block over trading days", "block_days": BOOT_BLOCK, "reps": BOOT_REPS}}
 
             # inputs shared by all groups
             obs = q(conn, """SELECT close_change_bp, new_volume::float / NULLIF(old_volume, 0) AS vol_ratio
@@ -494,12 +532,15 @@ def main():
             for (group, scen), res in results.items():
                 for sig, t in res.items():
                     k, n, (pr, lo, hi) = t.result()
-                    rows.append((frag_id, group, scen, sig, n, k, pr, lo, hi))
+                    blo, bhi = t.bootstrap(rng)
+                    rows.append((frag_id, group, scen, sig, n, k, pr, lo, hi, blo, bhi))
                     print(f"{group:9} {scen:22} {sig:16} {k:>8}/{n:<8} " + (
-                        f"{100 * pr:7.3f}%  [{100 * lo:.3f}, {100 * hi:.3f}]" if pr is not None else "   n/a"))
+                        f"{100 * pr:7.3f}%  [{100 * lo:.3f}, {100 * hi:.3f}]" if pr is not None else "   n/a") + (
+                        f"  boot [{100 * blo:.3f}, {100 * bhi:.3f}]" if blo is not None else ""))
             with conn.cursor() as cur:
                 cur.executemany("""INSERT INTO fragility_results (frag_run_id, universe, scenario, signal, n_compared,
-                                   n_flipped, flip_rate, ci_low, ci_high) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
+                                   n_flipped, flip_rate, ci_low, ci_high, boot_low, boot_high)
+                                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
                 cur.executemany("""INSERT INTO backtest_sensitivity (frag_run_id, scenario, metric, value)
                                    VALUES (%s,%s,%s,%s)""",
                                 [(frag_id, sc, k, _finite(v)) for sc, d in bt.items() for k, v in d.items()])

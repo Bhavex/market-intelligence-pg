@@ -59,7 +59,7 @@ TABLES = {
     "quality_by_group.csv": "SELECT * FROM v_quality_by_group",
     "fragility_results.csv": """
         SELECT r.frag_run_id, f.data_through, r.universe, r.scenario, r.signal, r.n_compared, r.n_flipped,
-               r.flip_rate, r.ci_low, r.ci_high
+               r.flip_rate, r.ci_low, r.ci_high, r.boot_low, r.boot_high
         FROM fragility_results r JOIN fragility_runs f USING (frag_run_id)
         WHERE r.frag_run_id = (SELECT MAX(frag_run_id) FROM fragility_runs)
         ORDER BY r.universe, r.scenario, r.signal""",
@@ -141,7 +141,8 @@ def main():
         "* `scale_mismatch`: ratio outside 0.8–1.25 — a split/bonus has rescaled the free history; not comparable.",
         "* `revision_kind`: rule-based class of each change (docs/TRUST.md §2.2).",
         "* Fragility `flip_rate`: share of comparisons whose signal answer changed; `ci_low`/`ci_high`: 95% "
-        "cluster-robust interval (cluster = contaminated day × simulation).",
+        "cluster-robust interval (cluster = contaminated day × simulation); `boot_low`/`boot_high`: "
+        "95% moving-block bootstrap over trading days (20-day blocks), a robustness check.",
         "",
         "## Known limitations",
         "Short live-capture window; the intraday error model is a Brownian bridge inside the day's range; "
