@@ -3,9 +3,15 @@ message: "If you use this software or its dataset, please cite it as below."
 title: "NSE Sector Intelligence: a point-in-time database and data-quality study of free end-of-day stock data"
 type: software
 authors:
-  # add "family-names: <surname>" below, and teammates as further entries, before the first release
   - given-names: Bhavishya
     affiliation: "Vellore Institute of Technology"
+  - given-names: Adya
+    family-names: Mohanka
+    affiliation: "Vellore Institute of Technology"
+  - given-names: Rhythm
+    family-names: Garg
+    affiliation: "Vellore Institute of Technology"
+license: MIT
 repository-code: "https://github.com/Bhavex/market-intelligence-pg"
 url: "https://bhavex.github.io/market-intelligence-pg/"
 keywords:
