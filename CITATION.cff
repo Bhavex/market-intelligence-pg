@@ -12,6 +12,7 @@ authors:
     family-names: Garg
     affiliation: "Vellore Institute of Technology"
 license: MIT
+doi: 10.5281/zenodo.23495953
 repository-code: "https://github.com/Bhavex/market-intelligence-pg"
 url: "https://bhavex.github.io/market-intelligence-pg/"
 keywords:

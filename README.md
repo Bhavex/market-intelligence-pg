@@ -35,7 +35,7 @@ flowchart LR
 - **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
 - **Security:** least-privilege read-only role for analysts and Power BI; secrets only in GitHub Actions
 - **Sector-rotation backtest** (2015 to today) on the live dashboard
-- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal. Run on 75 stocks (NIFTY 50 + 25 small caps) and two Yahoo listings (NSE and BSE), with results by company size and an open, citable dataset → [docs/TRUST.md](docs/TRUST.md)
+- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal. Run on 81 stocks (56 large caps, i.e. every NIFTY 50 member plus the dashboard stocks outside it, and 25 small caps) and two Yahoo listings (NSE and BSE), with results by company size and an open, citable dataset → [docs/TRUST.md](docs/TRUST.md)
 
 ## DBMS concepts used
 
@@ -189,5 +189,5 @@ GRANT readonly_access TO powerbi_reader;
 ## Team
 
 - **Database & Pipeline Engineer** (Bhavishya): schema, signal engine, automation, data quality, performance, dashboard site
-- **Analytics**: signal validation and analysis
-- **Visualisation**: Power BI dashboards and regional map
+- **Analytics** (Adya Mohanka): signal validation and analysis
+- **Visualisation** (Rhythm Garg): Power BI dashboards and regional map
