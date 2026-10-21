@@ -16,6 +16,21 @@ on:
       sims:
         description: "Repetitions of each simulated error scenario"
         default: "20"
+      study_only:
+        description: "true = run ONLY the signal-fragility study: skip the revision scan, official/second feeds and reporting refresh, so no price table is written (the study writes only fragility_runs, fragility_results, backtest_sensitivity and a pipeline_runs log row)"
+        default: "false"
+      cutoff:
+        description: "Pin the study to data through this date, YYYY-MM-DD (empty = all data)"
+        default: ""
+      bt_draws:
+        description: "Month-end backtest: simulated histories per setting and per replicate (empty = 5 x sims)"
+        default: ""
+      bt_replicates:
+        description: "Month-end backtest: independent random streams (their spread is the seed-stability check)"
+        default: "1"
+      seed:
+        description: "Random seed"
+        default: "42"
 
 concurrency:
   group: daily-update           # never runs at the same time as the daily load
@@ -35,21 +50,55 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Apply schema changes (safe, idempotent)
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/setup_db.py
       - name: Research universe (NIFTY 50 + 25 small caps, from NSE's index files)
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/universe.py
         continue-on-error: true   # if NSE's list can't be downloaded, the universe simply stays as it is
       - name: Revision scan (full history re-download, versioned; also loads new stocks)
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/revision_scan.py
       - name: Official exchange closes (NSE/BSE)
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/official_prices.py --days ${{ github.event.inputs.official_days || '250' }}
         continue-on-error: true   # exchanges may block cloud servers; logged in reference_fetch_log
       - name: Second free feed (Yahoo BSE listing), about a year
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/alt_feed.py --days 400
         continue-on-error: true
       - name: Signal-fragility study
-        run: python src/fragility.py --sims ${{ github.event.inputs.sims || '20' }}
+        env:                      # inputs go through env, never into the shell text
+          SIMS: ${{ github.event.inputs.sims || '20' }}
+          SEED: ${{ github.event.inputs.seed || '42' }}
+          CUTOFF: ${{ github.event.inputs.cutoff }}
+          BT_DRAWS: ${{ github.event.inputs.bt_draws }}
+          BT_REPS: ${{ github.event.inputs.bt_replicates || '1' }}
+        shell: bash               # -eo pipefail: a failing study fails the step despite the tee
+        run: |
+          args=(--sims "$SIMS" --seed "$SEED" --bt-replicates "$BT_REPS" --out study_output)
+          [ -n "$CUTOFF" ] && args+=(--cutoff "$CUTOFF")
+          [ -n "$BT_DRAWS" ] && args+=(--bt-draws "$BT_DRAWS")
+          python -u src/fragility.py "${args[@]}" | tee study_output.log
+      - name: Export derived dataset for release (read-only)
+        if: ${{ github.event.inputs.cutoff != '' }}
+        env:
+          CUTOFF: ${{ github.event.inputs.cutoff }}
+        shell: bash
+        run: |
+          FRAG=$(python -c "import json; print(json.load(open('study_output/run_parameters.json'))['frag_run_id'])")
+          python src/export_dataset.py --out study_output/dataset --cutoff "$CUTOFF" --frag-run-id "$FRAG"
       - name: Refresh reporting layer + data-quality checks
+        if: ${{ github.event.inputs.study_only != 'true' }}
         run: python src/post_load.py
       - name: Summary
         run: python src/trust_report.py >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the derived measurements (no prices)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trust-study-output
+          path: |
+            study_output/
+            study_output.log
+          if-no-files-found: warn

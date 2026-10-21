@@ -63,6 +63,23 @@ class UpsertStats:
         return self.inserted + self.updated + self.unchanged
 
 
+class UnfinishedSessionError(ValueError):
+    """Raised when rows for a session that has not closed yet (before FINAL_AFTER) reach the database."""
+
+
+def guard_final_sessions(rows: list[tuple], intraday: bool = False, now: datetime | None = None) -> None:
+    """Last line of defence: refuse to store a close for the current session before FINAL_AFTER
+    (16:30 IST), or for a future date, unless the caller explicitly says these rows are intraday.
+    The fetch functions already hold such bars back; this catches any other path into daily_prices."""
+    if intraday:
+        return
+    bad = sorted({r[1] for r in rows if not _session_finished(r[1], now)})
+    if bad:
+        raise UnfinishedSessionError(
+            f"refusing to store {len(bad)} unfinished session(s) as closes: {', '.join(map(str, bad))} "
+            f"(sessions are final only from {FINAL_AFTER:%H:%M} IST; pass intraday=True to mark them as intraday)")
+
+
 def _num(x):
     if x is None:
         return None
@@ -167,15 +184,18 @@ def fetch_rows(ticker: str, start: date, retries: int = 3) -> list[tuple]:
 
 
 def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,
-                source: str | None = None) -> UpsertStats:
+                source: str | None = None, intraday: bool = False) -> UpsertStats:
     """Upsert rows and report how many were inserted, updated (value changed) or unchanged.
     insert_only=True never overwrites an existing row (used for approximate fallback rows).
     Rows are (ticker, date, open, high, low, close, adj_close, volume); the provenance label
     stored in daily_prices.source defaults to 'yahoo_hourly' for insert_only (hourly-rebuilt)
-    rows and 'yahoo_daily' otherwise. Every change is versioned by 08_point_in_time.sql."""
+    rows and 'yahoo_daily' otherwise. Every change is versioned by 08_point_in_time.sql.
+    Raises UnfinishedSessionError for a row of a session not final yet unless intraday=True;
+    daily_prices has no intraday flag, so no caller sets it today."""
     stats = UpsertStats()
     if not rows:
         return stats
+    guard_final_sessions(rows, intraday)
     src = source or ("yahoo_hourly" if insert_only else "yahoo_daily")
     run_id = db.current_run_id()
     if run_id is not None:   # provenance for the versioning trigger; transaction-local, so it is

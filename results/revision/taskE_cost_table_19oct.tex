@@ -1,0 +1,28 @@
+\begin{table}[ht]
+\centering
+\small
+\caption{Sector rotation vs equal-weight benchmarks on the clean data, by transaction cost (bp per one-way notional traded; start = 100; turnover is one-way, per year).}
+\label{tab:backtest-costs}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Series & bp & Final & CAGR % & Vol % & Sharpe & MaxDD % & Turn/yr \\
+\midrule
+Rotation & 0 & 458.7 & 13.84 & 21.20 & 0.72 & -29.9 & 9.66 \\
+Equal-weight, monthly rebalanced & 0 & 427.1 & 13.15 & 14.17 & 0.95 & -21.7 & 0.24 \\
+Equal-weight buy-and-hold (5 sectors) & 0 & 380.2 & 12.04 & 14.03 & 0.88 & -21.5 & 0.04 \\
+Equal-weight buy-and-hold (25 stocks) & 0 & 353.9 & 11.35 & 13.82 & 0.85 & -19.4 & 0.04 \\
+Rotation & 10 & 365.5 & 11.66 & 21.19 & 0.62 & -31.4 & 9.66 \\
+Equal-weight, monthly rebalanced & 10 & 424.7 & 13.10 & 14.17 & 0.94 & -21.7 & 0.24 \\
+Equal-weight buy-and-hold (5 sectors) & 10 & 379.8 & 12.03 & 14.03 & 0.88 & -21.5 & 0.04 \\
+Equal-weight buy-and-hold (25 stocks) & 10 & 353.5 & 11.35 & 13.82 & 0.85 & -19.4 & 0.04 \\
+Rotation & 20 & 291.1 & 9.52 & 21.18 & 0.53 & -32.9 & 9.66 \\
+Equal-weight, monthly rebalanced & 20 & 422.3 & 13.04 & 14.17 & 0.94 & -21.7 & 0.24 \\
+Equal-weight buy-and-hold (5 sectors) & 20 & 379.4 & 12.02 & 14.03 & 0.88 & -21.5 & 0.04 \\
+Equal-weight buy-and-hold (25 stocks) & 20 & 353.2 & 11.34 & 13.82 & 0.85 & -19.4 & 0.04 \\
+Rotation & 30 & 231.7 & 7.41 & 21.17 & 0.44 & -34.4 & 9.66 \\
+Equal-weight, monthly rebalanced & 30 & 420.0 & 12.99 & 14.17 & 0.94 & -21.7 & 0.24 \\
+Equal-weight buy-and-hold (5 sectors) & 30 & 379.0 & 12.01 & 14.03 & 0.88 & -21.5 & 0.04 \\
+Equal-weight buy-and-hold (25 stocks) & 30 & 352.8 & 11.33 & 13.82 & 0.85 & -19.4 & 0.04 \\
+\bottomrule
+\end{tabular}
+\end{table}

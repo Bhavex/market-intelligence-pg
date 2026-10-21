@@ -42,7 +42,7 @@
       el.innerHTML = `<div class="h-top"><span class="h-tk">${esc(r.ticker.replace(".NS", ""))}</span><span class="h-sec">${esc(r.sector_name)}</span></div>
         <div class="h-name">${esc(r.company_name)}</div>
         ${spark(series && series[r.ticker] && series[r.ticker].c, up)}
-        <div class="h-bot"><span class="h-px">₹${Number(r.close).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span><span class="h-ch ${up ? "up" : "down"}">${sign(r.return_1d)}</span></div>`;
+        <div class="h-bot"><span class="h-px">${Number(r.index_level).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span><span class="h-ch ${up ? "up" : "down"}">${sign(r.return_1d)}</span></div>`;
       el.addEventListener("click", (e) => {
         if (dragged) { e.preventDefault(); return; }       // a drag that ended on a card is not a click
         const sel = document.getElementById("stockSelect");

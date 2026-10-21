@@ -1,0 +1,18 @@
+\begin{table}[ht]
+\centering
+\small
+\caption{Effect of the 13 Oct 2026 intraday rows on the backtest (no costs).}
+\label{tab:backtest-contaminated}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Series & bp & Final & CAGR % & Vol % & Sharpe & MaxDD % & Turn/yr \\
+\midrule
+clean: Rotation & 0 & 463.0 & 13.93 & 21.19 & 0.72 & -29.9 & 9.66 \\
+clean: Equal-weight, monthly rebalanced & 0 & 419.9 & 12.99 & 14.16 & 0.94 & -21.7 & 0.24 \\
+contaminated full 0939: Rotation & 0 & 461.4 & 13.90 & 21.19 & 0.72 & -29.9 & 9.66 \\
+contaminated full 0939: Equal-weight, monthly rebalanced & 0 & 415.9 & 12.90 & 14.17 & 0.93 & -21.7 & 0.24 \\
+contaminated infy only: Rotation & 0 & 463.0 & 13.93 & 21.19 & 0.72 & -29.9 & 9.66 \\
+contaminated infy only: Equal-weight, monthly rebalanced & 0 & 419.4 & 12.98 & 14.16 & 0.94 & -21.7 & 0.24 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -227,7 +227,7 @@
       const t = sel.value, s = data.series[t], r = byTicker[t];
       if (fromUser === true) history.replaceState(null, "", "#stock=" + encodeURIComponent(t));
       document.getElementById("stockStats").innerHTML = [
-        ["Close", "₹" + num(r.close)],
+        ["Price index", num(r.index_level, 1)],
         ["1 day", `<span class="${cls(r.return_1d)}">${sign(r.return_1d, 2)}</span>`],
         ["1 month", `<span class="${cls(r.momentum_20d)}">${sign(r.momentum_20d)}</span>`],
         ["1 year", `<span class="${cls(r.return_1y)}">${sign(r.return_1y)}</span>`],
@@ -243,7 +243,7 @@
         data: {
           labels: s.d,
           datasets: [
-            { label: "Close", data: s.c, borderColor: accent, backgroundColor: accent },
+            { label: "Price index", data: s.c, borderColor: accent, backgroundColor: accent },
             { label: "50-day avg", data: s.s50, borderColor: css("--ink-2"), backgroundColor: css("--ink-2"), borderWidth: 1.5 },
             { label: "200-day avg", data: s.s200, borderColor: css("--muted"), backgroundColor: css("--muted"), borderWidth: 1.5, borderDash: [5, 4] },
             { label: "Anomaly", data: anomPts, showLine: false, pointRadius: 5, pointHoverRadius: 6, borderColor: css("--surface"), borderWidth: 2, backgroundColor: css("--down") },
@@ -251,9 +251,9 @@
         },
         options: {
           maintainAspectRatio: false, interaction: lineInteraction,
-          plugins: { tooltip: { filter: (i) => i.raw != null, callbacks: { title: (i) => fmtDate(i[0].label), label: (c) => ` ${c.dataset.label}: ₹${num(c.raw)}` } } },
+          plugins: { tooltip: { filter: (i) => i.raw != null, callbacks: { title: (i) => fmtDate(i[0].label), label: (c) => ` ${c.dataset.label}: ${num(c.raw, 1)}` } } },
           scales: { x: { ticks: { maxTicksLimit: 8, callback: function (v) { return fmtDate(this.getLabelForValue(v)).replace(/^\d+ /, ""); } }, grid: { display: false } },
-                    y: { grid: { color: css("--grid") }, ticks: { callback: (v) => "₹" + v.toLocaleString("en-IN") } } },
+                    y: { grid: { color: css("--grid") }, ticks: { callback: (v) => v.toLocaleString("en-IN") } } },
         },
       });
       rsi = new Chart(document.getElementById("rsiChart"), {
@@ -437,9 +437,9 @@
     if (ex && exBox) {
       exBox.hidden = false;
       exBox.innerHTML = `<b>Time travel:</b> at ${istTime(ex.old_known_from)} the database held
-        <b>${esc(ex.company_name)}</b>'s ${fmtDate(ex.price_date)} close as ₹${num(ex.old_close)}.
-        It was revised on ${istTime(ex.revised_at)} to ₹${num(ex.new_close)}
-        (${ex.close_change_bp > 0 ? "+" : ""}${num(ex.close_change_bp, 1)} bp, ${esc((KIND[ex.revision_kind] || ex.revision_kind).toLowerCase())}).
+        <b>${esc(ex.company_name)}</b>'s ${fmtDate(ex.price_date)} close.
+        It was revised on ${istTime(ex.revised_at)} by
+        ${ex.close_change_bp > 0 ? "+" : ""}${num(ex.close_change_bp, 1)} bp (${esc((KIND[ex.revision_kind] || ex.revision_kind).toLowerCase())}).
         Both versions are kept, so either moment can be replayed.`;
     }
 

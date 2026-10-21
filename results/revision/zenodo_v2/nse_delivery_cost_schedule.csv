@@ -1,0 +1,8 @@
+component,rule,buy_bp,sell_bp,source
+STT,0.100% buy and sell,10.0,10.0,"NSE, SEBI Turnover Fees, STT and Other levies (rates w.e.f. 1 Apr 2026; page updated 17 Apr 2026), fetched 21 Oct 2026"
+NSE transaction charge,Rs 307 per crore each side,0.307,0.307,"NSE circular NSE/FA/73061, 27 Feb 2026, effective 1 Mar 2026"
+SEBI turnover fee,Rs 10 per crore each side,0.1,0.1,"NSE page above, fetched 21 Oct 2026"
+Stamp duty,0.015% buyer only,1.5,0.0,"NSE page above, fetched 21 Oct 2026"
+Brokerage (delivery),Rs 0 (discount broker),0.0,0.0,"Zerodha charges page, fetched 21 Oct 2026"
+GST,18% of (brokerage + SEBI fee + transaction charge),0.0733,0.0733,"NSE page (rate); base per Zerodha charges page, fetched 21 Oct 2026"
+TOTAL,,11.9803,10.4803,"one-way = average of buy and sell = 11.23 bp, used as 11.2 bp"

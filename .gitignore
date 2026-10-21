@@ -5,3 +5,17 @@ __pycache__/
 .DS_Store
 *.pbix.bak
 site/data/
+
+# Raw vendor price data (Yahoo/NSE/BSE): never commit. Derived measurements go in results/ and docs/.
+before_prod/
+after_prod/
+*daily_prices*.csv
+bhavcopy*
+*bhav*.csv
+*.parquet
+*.dump
+data/raw/
+raw/
+
+# Internal working notes and audit logs: local only, never committed.
+results/private/

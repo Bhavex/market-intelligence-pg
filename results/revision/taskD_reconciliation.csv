@@ -1,0 +1,9 @@
+check,data_through,rotation_final,picks,state,ytd_Auto,ytd_Banking,ytd_FMCG,ytd_IT,ytd_Pharma,equal_weight_final,ticker,adj_close_over_close
+paper_monthly_backtest,2026-10-13,462.98,142.0,,,,,,,,,
+paper_monthly_backtest,2026-10-16,460.54,142.0,,,,,,,,,
+paper_monthly_backtest,2026-10-19,458.72,142.0,,,,,,,,,
+ytd_13oct,,,,healed,-11.19,-4.95,-17.73,-21.87,5.39,419.91,,
+ytd_13oct,,,,stale_a_close_overwrites_adj,-11.63,-5.44,-17.88,-24.06,5.04,416.16,,
+ytd_13oct,,,,stale_b_adj_scaled,-11.63,-5.44,-17.88,-24.28,5.04,415.91,,
+adj_factor_on_13oct,,,,,,,,,,,TCS.NS,0.99471
+adj_factor_on_13oct,,,,,,,,,,,HCLTECH.NS,0.99118

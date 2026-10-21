@@ -1,0 +1,82 @@
+ticker,company_name,sector_or_industry,cap_group,in_dashboard,index_membership,isin
+AARTIIND.NS,Aarti Industries Ltd.,Chemicals,small,False,NIFTY SMALLCAP 100,INE769A01020
+ADANIENT.NS,Adani Enterprises Ltd.,Metals & Mining,large,False,NIFTY 50,INE423A01024
+ADANIPORTS.NS,Adani Ports and Special Economic Zone Ltd.,Services,large,False,NIFTY 50,INE742F01042
+AMBER.NS,Amber Enterprises India Ltd.,Consumer Durables,small,False,NIFTY SMALLCAP 100,INE371P01015
+APOLLOHOSP.NS,Apollo Hospitals Enterprise Ltd.,Healthcare,large,False,NIFTY 50,INE437A01024
+APOLLOTYRE.NS,Apollo Tyres Ltd.,Automobile and Auto Components,small,False,NIFTY SMALLCAP 100,INE438A01022
+ASIANPAINT.NS,Asian Paints Ltd.,Consumer Durables,large,False,NIFTY 50,INE021A01026
+AXISBANK.NS,Axis Bank,Banking,large,True,NIFTY 50,INE238A01034
+BAJAJ-AUTO.NS,Bajaj Auto,Auto,large,True,NIFTY 50,INE917I01010
+BAJAJFINSV.NS,Bajaj Finserv Ltd.,Financial Services,large,False,NIFTY 50,INE918I01026
+BAJFINANCE.NS,Bajaj Finance Ltd.,Financial Services,large,False,NIFTY 50,INE296A01032
+BANDHANBNK.NS,Bandhan Bank Ltd.,Financial Services,small,False,NIFTY SMALLCAP 100,INE545U01014
+BEL.NS,Bharat Electronics Ltd.,Capital Goods,large,False,NIFTY 50,INE263A01024
+BHARTIARTL.NS,Bharti Airtel Ltd.,Telecommunication,large,False,NIFTY 50,INE397D01024
+BRIGADE.NS,Brigade Enterprises Ltd.,Realty,small,False,NIFTY SMALLCAP 100,INE791I01019
+BRITANNIA.NS,Britannia Industries,FMCG,large,True,,INE216A01030
+BSE.NS,BSE Ltd.,Financial Services,large,False,NIFTY 50,INE118H01025
+CESC.NS,CESC Ltd.,Power,small,False,NIFTY SMALLCAP 100,INE486A01021
+CIPLA.NS,Cipla,Pharma,large,True,NIFTY 50,INE059A01026
+CMPDI.NS,Central Mine Planning & Design Institute Ltd.,Services,small,False,NIFTY SMALLCAP 100,INE05HV01027
+COALINDIA.NS,Coal India Ltd.,Oil Gas & Consumable Fuels,large,False,NIFTY 50,INE522F01014
+CUB.NS,City Union Bank Ltd.,Financial Services,small,False,NIFTY SMALLCAP 100,INE491A01021
+DABUR.NS,Dabur India,FMCG,large,True,,INE016A01026
+DELHIVERY.NS,Delhivery Ltd.,Services,small,False,NIFTY SMALLCAP 100,INE148O01028
+DIVISLAB.NS,Divi's Laboratories,Pharma,large,True,,INE361B01024
+DRREDDY.NS,Dr. Reddy's Laboratories,Pharma,large,True,NIFTY 50,INE089A01031
+EICHERMOT.NS,Eicher Motors,Auto,large,True,NIFTY 50,INE066A01021
+ETERNAL.NS,Eternal Ltd.,Consumer Services,large,False,NIFTY 50,INE758T01015
+FSL.NS,Firstsource Solutions Ltd.,Services,small,False,NIFTY SMALLCAP 100,INE684F01012
+GMDCLTD.NS,Gujarat Mineral Development Corporation Ltd.,Metals & Mining,small,False,NIFTY SMALLCAP 100,INE131A01031
+GRASIM.NS,Grasim Industries Ltd.,Construction Materials,large,False,NIFTY 50,INE047A01021
+HCLTECH.NS,HCL Technologies,IT,large,True,NIFTY 50,INE860A01027
+HDFCBANK.NS,HDFC Bank,Banking,large,True,NIFTY 50,INE040A01034
+HDFCLIFE.NS,HDFC Life Insurance Company Ltd.,Financial Services,large,False,NIFTY 50,INE795G01014
+HEROMOTOCO.NS,Hero MotoCorp,Auto,large,True,,INE158A01026
+HFCL.NS,HFCL Ltd.,Telecommunication,small,False,NIFTY SMALLCAP 100,INE548A01028
+HINDALCO.NS,Hindalco Industries Ltd.,Metals & Mining,large,False,NIFTY 50,INE038A01020
+HINDUNILVR.NS,Hindustan Unilever,FMCG,large,True,NIFTY 50,INE030A01027
+ICICIBANK.NS,ICICI Bank,Banking,large,True,NIFTY 50,INE090A01021
+IGL.NS,Indraprastha Gas Ltd.,Oil Gas & Consumable Fuels,small,False,NIFTY SMALLCAP 100,INE203G01027
+INDIGO.NS,InterGlobe Aviation Ltd.,Services,large,False,NIFTY 50,INE646L01027
+INFY.NS,Infosys,IT,large,True,NIFTY 50,INE009A01021
+ITC.NS,ITC,FMCG,large,True,NIFTY 50,INE154A01025
+ITI.NS,ITI Ltd.,Telecommunication,small,False,NIFTY SMALLCAP 100,INE248A01017
+JIOFIN.NS,Jio Financial Services Ltd.,Financial Services,large,False,NIFTY 50,INE758E01017
+JSWSTEEL.NS,JSW Steel Ltd.,Metals & Mining,large,False,NIFTY 50,INE019A01038
+KARURVYSYA.NS,Karur Vysya Bank Ltd.,Financial Services,small,False,NIFTY SMALLCAP 100,INE036D01028
+KIRLOSENG.NS,Kirloskar Oil Eng Ltd.,Capital Goods,small,False,NIFTY SMALLCAP 100,INE146L01010
+KOTAKBANK.NS,Kotak Mahindra Bank,Banking,large,True,NIFTY 50,INE237A01028
+LT.NS,Larsen & Toubro Ltd.,Construction,large,False,NIFTY 50,INE018A01030
+LUPIN.NS,Lupin,Pharma,large,True,,INE326A01037
+M&M.NS,Mahindra & Mahindra,Auto,large,True,NIFTY 50,INE101A01026
+MARUTI.NS,Maruti Suzuki India,Auto,large,True,NIFTY 50,INE585B01010
+MAXHEALTH.NS,Max Healthcare Institute Ltd.,Healthcare,large,False,NIFTY 50,INE027H01010
+MRPL.NS,Mangalore Refinery & Petrochemicals Ltd.,Oil Gas & Consumable Fuels,small,False,NIFTY SMALLCAP 100,INE103A01014
+NBCC.NS,NBCC (India) Ltd.,Construction,small,False,NIFTY SMALLCAP 100,INE095N01031
+NESTLEIND.NS,Nestle India,FMCG,large,True,NIFTY 50,INE239A01024
+NTPC.NS,NTPC Ltd.,Power,large,False,NIFTY 50,INE733E01010
+OLAELEC.NS,Ola Electric Mobility Ltd.,Automobile and Auto Components,small,False,NIFTY SMALLCAP 100,INE0LXG01040
+ONGC.NS,Oil & Natural Gas Corporation Ltd.,Oil Gas & Consumable Fuels,large,False,NIFTY 50,INE213A01029
+PNBHOUSING.NS,PNB Housing Finance Ltd.,Financial Services,small,False,NIFTY SMALLCAP 100,INE572E01012
+POWERGRID.NS,Power Grid Corporation of India Ltd.,Power,large,False,NIFTY 50,INE752E01010
+RBLBANK.NS,RBL Bank Ltd.,Financial Services,small,False,NIFTY SMALLCAP 100,INE976G01028
+RELIANCE.NS,Reliance Industries Ltd.,Oil Gas & Consumable Fuels,large,False,NIFTY 50,INE002A01018
+SAILIFE.NS,Sai Life Sciences Ltd.,Healthcare,small,False,NIFTY SMALLCAP 100,INE570L01029
+SBILIFE.NS,SBI Life Insurance Company Ltd.,Financial Services,large,False,NIFTY 50,INE123W01016
+SBIN.NS,State Bank of India,Banking,large,True,NIFTY 50,INE062A01020
+SHRIRAMFIN.NS,Shriram Finance Ltd.,Financial Services,large,False,NIFTY 50,INE721A01047
+SUNPHARMA.NS,Sun Pharmaceutical Industries,Pharma,large,True,NIFTY 50,INE044A01036
+SYNGENE.NS,Syngene International Ltd.,Healthcare,small,False,NIFTY SMALLCAP 100,INE398R01022
+TATACONSUM.NS,Tata Consumer Products Ltd.,Fast Moving Consumer Goods,large,False,NIFTY 50,INE192A01025
+TATASTEEL.NS,Tata Steel Ltd.,Metals & Mining,large,False,NIFTY 50,INE081A01020
+TATATECH.NS,Tata Technologies Ltd.,Information Technology,small,False,NIFTY SMALLCAP 100,INE142M01025
+TCS.NS,Tata Consultancy Services,IT,large,True,NIFTY 50,INE467B01029
+TECHM.NS,Tech Mahindra,IT,large,True,NIFTY 50,INE669C01036
+TITAN.NS,Titan Company Ltd.,Consumer Durables,large,False,NIFTY 50,INE280A01028
+TMPV.NS,Tata Motors Passenger Vehicles Ltd.,Automobile and Auto Components,large,False,NIFTY 50,INE155A01022
+TRENT.NS,Trent Ltd.,Consumer Services,large,False,NIFTY 50,INE849A01020
+ULTRACEMCO.NS,UltraTech Cement Ltd.,Construction Materials,large,False,NIFTY 50,INE481G01011
+URBANCO.NS,Urban Company Ltd.,Consumer Services,small,False,NIFTY SMALLCAP 100,INE0CAZ01013
+WIPRO.NS,Wipro,IT,large,True,,INE075A01022

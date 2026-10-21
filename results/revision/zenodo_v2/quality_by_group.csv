@@ -1,0 +1,4 @@
+grp,n_stocks,n_stock_days,nse_compared,nse_agree_pct,nse_live_first_prints,nse_first_print_agree_pct,bse_feed_compared,bse_feed_agree_pct,bse_feed_live_first_prints,bse_feed_first_print_agree_pct,sessions_traded,sessions_missing_in_yahoo,missing_pct,value_revisions_per_1000,rescaled_rows
+dashboard,25,72825,6163,100.000,150,84.00,2026,98.618,66,100.00,6225,0,0.000,2.334,5820
+large,56,155876,13781,99.964,305,92.13,6779,98.613,164,100.00,13944,0,0.000,1.476,5820
+small,25,55983,5728,99.895,120,100.00,4062,98.572,86,100.00,6051,0,0.000,0.804,5

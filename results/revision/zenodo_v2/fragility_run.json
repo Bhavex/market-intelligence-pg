@@ -1,0 +1,125 @@
+{
+ "frag_run_id": 5,
+ "created_at": "2026-10-21T06:06:00.457637+00:00",
+ "data_through": "2026-10-19",
+ "n_stock_days": 211859,
+ "seed": 42,
+ "params": {
+  "seed": 42,
+  "sims": 200,
+  "large": {
+   "n_stocks": 56,
+   "n_stock_days": 155876,
+   "early_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.02,
+     0.1
+    ]
+   },
+   "hourly_rebuild": {
+    "n_obs": 0,
+    "calibration": "default N(0, 4bp), volume x0.85"
+   },
+   "calibrated_noise": {
+    "n_differences": 13781,
+    "share_nonzero": 0.0003628183731224149
+   },
+   "intraday_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.05,
+     0.95
+    ]
+   },
+   "official_vs_yahoo": {
+    "stock_days": 13781
+   },
+   "observed_first_print": {
+    "stock_days": 6022
+   }
+  },
+  "small": {
+   "n_stocks": 25,
+   "n_stock_days": 55983,
+   "early_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.02,
+     0.1
+    ]
+   },
+   "hourly_rebuild": {
+    "n_obs": 0,
+    "calibration": "default N(0, 4bp), volume x0.85"
+   },
+   "calibrated_noise": {
+    "n_differences": 5728,
+    "share_nonzero": 0.001047486033519553
+   },
+   "intraday_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.05,
+     0.95
+    ]
+   },
+   "official_vs_yahoo": {
+    "stock_days": 5728
+   },
+   "observed_first_print": {
+    "stock_days": 48
+   }
+  },
+  "cutoff": "2026-10-19",
+  "bt_draws": 1000000,
+  "interval": "95% cluster-robust (cluster = contaminated day x simulation)",
+  "bootstrap": {
+   "kind": "moving-block over trading days",
+   "reps": 1000,
+   "block_days": 20
+  },
+  "dashboard": {
+   "n_stocks": 25,
+   "n_stock_days": 72825,
+   "early_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.02,
+     0.1
+    ]
+   },
+   "hourly_rebuild": {
+    "n_obs": 0,
+    "calibration": "default N(0, 4bp), volume x0.85"
+   },
+   "calibrated_noise": {
+    "n_differences": 6163,
+    "share_nonzero": 0.0
+   },
+   "intraday_snapshot": {
+    "days": 2713,
+    "session_fraction": [
+     0.05,
+     0.95
+    ]
+   },
+   "official_vs_yahoo": {
+    "stock_days": 6163
+   },
+   "observed_first_print": {
+    "stock_days": 5962
+   }
+  },
+  "bt_replicates": 3
+ },
+ "validation": {
+  "breakout_rows": 191561,
+  "rows_compared": 211859,
+  "trend_match_pct": 100.0,
+  "anomaly_match_pct": 100.0,
+  "breakout_match_pct": 100.0,
+  "rsi_within_0.01_pct": 100.0,
+  "mom20_within_1e-6_pct": 100.0
+ }
+}

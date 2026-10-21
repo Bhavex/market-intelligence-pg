@@ -1,5 +1,8 @@
 """Exports dashboard data from the reporting views to site/data/*.json.
 The public website only reads these static files - it never connects to the database.
+Only DERIVED data is published: performance indexed to 100 at the start of each chart, signals, returns and
+summary statistics. Raw closes, OHLC, volume and the exchanges' official prices are never written (the paper states
+that raw prices are not redistributed); write() refuses any file that contains such a field.
 Usage:  python src/export_site.py"""
 import datetime as dt
 import json
@@ -13,6 +16,12 @@ from db import get_conn
 
 OUT = Path(__file__).resolve().parent.parent / "site" / "data"
 SERIES_DAYS = 760          # ~2 years of daily points per stock for the stock explorer
+
+# Field names that carry vendor/exchange prices or volumes. None may appear anywhere in a published file.
+RAW_PRICE_FIELDS = frozenset({
+    "open", "high", "low", "close", "adj_close", "volume", "close_1y", "old_close", "new_close", "old_volume",
+    "new_volume", "yahoo_close", "official_close", "official_last_price", "best_close",
+})
 
 
 def q(conn, sql, params=None):
@@ -42,7 +51,55 @@ def records(df, nd=6):
     return [{k: clean(v, nd) for k, v in row.items()} for row in df.to_dict("records")]
 
 
+def assert_derived_only(obj, where="file"):
+    """Raise if any dict key inside obj is a raw price/volume field."""
+    if isinstance(obj, dict):
+        bad = RAW_PRICE_FIELDS.intersection(obj)
+        if bad:
+            raise ValueError(f"{where}: raw price field(s) {sorted(bad)} must not be published")
+        for k, v in obj.items():
+            assert_derived_only(v, f"{where}.{k}")
+    elif isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj[:50]):                 # rows share one schema; checking a sample is enough
+            assert_derived_only(v, f"{where}[{i}]")
+
+
+def index_series(hist):
+    """Per-stock chart series indexed to 100 at the first close of the window; SMAs use the same base so the
+    price/average relationship (and every crossover) looks exactly as before. Raw closes are not returned.
+    Returns ({ticker: series dict}, {ticker: latest index level})."""
+    series, level = {}, {}
+    for t, g in hist.groupby("ticker"):
+        closes = g["close"].dropna()
+        if closes.empty or closes.iloc[0] == 0:
+            continue
+        base = float(closes.iloc[0])
+        idx = lambda col: [clean(None if v is None or v != v else 100 * float(v) / base, 2) for v in g[col]]
+        series[t] = {
+            "d": [d.isoformat() for d in g["price_date"]],
+            "c": idx("close"),
+            "s50": idx("sma_50"),
+            "s200": idx("sma_200"),
+            "rsi": [clean(v, 1) for v in g["rsi_14"]],
+            "a": [i for i, a in enumerate(g["is_anomaly"]) if a],
+        }
+        level[t] = series[t]["c"][-1]
+    return series, level
+
+
+def strip_trust(trust):
+    """trust.json: keep the measurements, drop the price columns (incident example and disagreement list)."""
+    for ex in trust.get("example") or []:
+        for k in ("old_close", "new_close"):
+            ex.pop(k, None)
+    for row in trust.get("disagreements") or []:
+        for k in ("yahoo_close", "official_close", "official_last_price"):
+            row.pop(k, None)
+    return trust
+
+
 def write(name, obj):
+    assert_derived_only(obj, name)
     (OUT / name).write_text(json.dumps(obj, separators=(",", ":")))
     print(f"wrote {name} ({(OUT / name).stat().st_size / 1024:.0f} KB)")
 
@@ -203,36 +260,28 @@ def main():
         og_image(weekly, latest)
 
         # ---------- stocks ----------
-        fund = q(conn, """SELECT DISTINCT ON (ticker) ticker, market_cap, pe_ratio
-                          FROM fundamentals ORDER BY ticker, snapshot_date DESC""")
+        # Derived data only: returns and signals from the snapshot, and chart series indexed to 100 at the start
+        # of the window. The latest close, market cap and P/E are not published (the page does not use the last two).
         one_year = q(conn, """
             SELECT DISTINCT ON (ticker) ticker, close AS close_1y
             FROM daily_prices WHERE price_date <= %s::date - 365
             ORDER BY ticker, price_date DESC""", (latest,))
-        snap = snap.merge(fund, on="ticker", how="left").merge(one_year, on="ticker", how="left")
+        snap = snap.merge(one_year, on="ticker", how="left")
         snap["return_1y"] = snap["close"] / snap["close_1y"] - 1
-        cols = ["ticker", "company_name", "sector_name", "city_name", "state", "region", "latitude",
-                "longitude", "close", "return_1d", "momentum_20d", "momentum_60d", "return_1y",
-                "volatility_20d", "rsi_14", "trend", "is_anomaly", "market_cap", "pe_ratio"]
         hist = q(conn, """
             SELECT ticker, price_date, close, sma_50, sma_200, rsi_14, volume, is_anomaly
             FROM v_company_daily WHERE price_date >= %s::date - %s
             ORDER BY ticker, price_date""", (latest, SERIES_DAYS))
-        series = {}
-        for t, g in hist.groupby("ticker"):
-            series[t] = {
-                "d": [d.isoformat() for d in g["price_date"]],
-                "c": [clean(v, 2) for v in g["close"]],
-                "s50": [clean(v, 2) for v in g["sma_50"]],
-                "s200": [clean(v, 2) for v in g["sma_200"]],
-                "rsi": [clean(v, 1) for v in g["rsi_14"]],
-                "a": [i for i, a in enumerate(g["is_anomaly"]) if a],
-            }
+        series, level = index_series(hist)
+        snap["index_level"] = snap["ticker"].map(level)
+        cols = ["ticker", "company_name", "sector_name", "city_name", "state", "region", "latitude",
+                "longitude", "index_level", "return_1d", "momentum_20d", "momentum_60d", "return_1y",
+                "volatility_20d", "rsi_14", "trend", "is_anomaly"]
         write("stocks.json", {"latest": records(snap[cols].sort_values("ticker"), 4), "series": series})
 
         # ---------- anomalies ----------
         anom = q(conn, """
-            SELECT price_date, ticker, company_name, sector_name, close, return_1d,
+            SELECT price_date, ticker, company_name, sector_name, return_1d,
                    volume_zscore_20d, anomaly_reason
             FROM v_anomalies WHERE price_date >= %s::date - 90
             ORDER BY price_date DESC, ABS(return_1d) DESC LIMIT 60""", (latest,))
@@ -245,7 +294,9 @@ def main():
         # Optional research layer (sql/08-10): if anything is missing the rest of the site still publishes.
         try:
             from trust_report import collect
-            (OUT / "trust.json").write_text(json.dumps(collect(conn), separators=(",", ":"), default=str))
+            trust = strip_trust(collect(conn))
+            assert_derived_only(trust, "trust.json")
+            (OUT / "trust.json").write_text(json.dumps(trust, separators=(",", ":"), default=str))
             print("wrote trust.json")
         except Exception as exc:
             conn.rollback()
