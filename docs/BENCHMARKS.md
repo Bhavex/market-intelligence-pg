@@ -1,13 +1,13 @@
 # Query performance benchmarks
 
-_Generated automatically by `src/benchmark.py` on 25 Oct 2026 (PostgreSQL 17.11 on Neon, free tier). Median of 7 runs after a warm-up; every run is wrapped in a rolled-back transaction._
+_Generated automatically by `src/benchmark.py` on 01 Nov 2026 (PostgreSQL 17.11 on Neon, free tier). Median of 7 runs after a warm-up; every run is wrapped in a rolled-back transaction._
 
 | Test | Before | After | Speed-up |
 |---|---|---|---|
-| B-tree index: one stock, last 12 months | Forced sequential scan: 14.74 ms | Primary-key index: 0.12 ms | **128.2×** |
-| Partial index: anomalies, last 90 days | Forced sequential scan: 37.59 ms | idx_signals_anomaly (partial): 0.23 ms | **162.7×** |
-| Materialized view: sector stats, last 12 months | Plain view (aggregates every time): 127.03 ms | Materialized view (precomputed): 0.23 ms | **547.6×** |
-| Partitioning: one year, average close per stock | Normal table (scans all years): 18.47 ms | Year-partitioned table (pruned to 1 of 13 partitions): 4.75 ms | **3.9×** |
+| B-tree index: one stock, last 12 months | Forced sequential scan: 15.91 ms | Primary-key index: 0.12 ms | **131.5×** |
+| Partial index: anomalies, last 90 days | Forced sequential scan: 41.23 ms | idx_signals_anomaly (partial): 0.24 ms | **169.0×** |
+| Materialized view: sector stats, last 12 months | Plain view (aggregates every time): 132.41 ms | Materialized view (precomputed): 0.23 ms | **573.2×** |
+| Partitioning: one year, average close per stock | Normal table (scans all years): 19.38 ms | Year-partitioned table (pruned to 1 of 13 partitions): 4.79 ms | **4.0×** |
 
 ## Query plans used
 
@@ -29,28 +29,28 @@ _Generated automatically by `src/benchmark.py` on 25 Oct 2026 (PostgreSQL 17.11 
 
 ## Signal engine
 
-`refresh_signals()` recomputes 30 days of signals for all stocks in **4680 ms** (window functions over ~400 days of look-back per stock).
+`refresh_signals()` recomputes 30 days of signals for all stocks in **4714 ms** (window functions over ~400 days of look-back per stock).
 
 ## Table sizes
 
 | Table | Rows (approx.) | Size on disk |
 |---|---|---|
-| `price_versions` | 224,253 | 89 MB |
-| `signals` | 212,102 | 77 MB |
-| `daily_prices` | 212,102 | 35 MB |
-| `reference_prices` | 40,284 | 9680 kB |
-| `audit_log` | 6,586 | 4584 kB |
-| `mv_sector_daily` | 14,580 | 2576 kB |
-| `alt_feed_prices` | 12,416 | 2096 kB |
-| `fragility_results` | 696 | 176 kB |
-| `reference_fetch_log` | 510 | 152 kB |
+| `price_versions` | 228,113 | 91 MB |
+| `signals` | 212,507 | 77 MB |
+| `daily_prices` | 212,507 | 35 MB |
+| `reference_prices` | 41,084 | 9840 kB |
+| `audit_log` | 7,061 | 4936 kB |
+| `mv_sector_daily` | 14,605 | 2576 kB |
+| `alt_feed_prices` | 12,816 | 2192 kB |
+| `fragility_results` | 827 | 200 kB |
+| `reference_fetch_log` | 520 | 152 kB |
+| `pipeline_runs` | 208 | 104 kB |
 | `companies` | 81 | 96 kB |
-| `pipeline_runs` | 141 | 96 kB |
-| `backtest_sensitivity` | 150 | 80 kB |
+| `fundamentals` | 268 | 88 kB |
+| `backtest_sensitivity` | 170 | 80 kB |
 | `sectors` | 22 | 80 kB |
-| `fundamentals` | 187 | 64 kB |
 | `cities` | 9 | 40 kB |
-| `fragility_runs` | 6 | 32 kB |
+| `fragility_runs` | 7 | 32 kB |
 | `market_holidays` | 16 | 32 kB |
 
 ## How the partitioned table is built
