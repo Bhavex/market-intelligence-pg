@@ -71,5 +71,7 @@ jobs:
         run: |
           python src/setup_db.py
           python src/setup_db.py
+      - name: Load two years of synthetic sample data
+        run: python scripts/load_sample_data.py --years 2
       - name: Run all tests, including the database tests
         run: python -m pytest
