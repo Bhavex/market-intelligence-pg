@@ -155,11 +155,11 @@ class TestBackfill:
         conn = base_conn(["INFY.NS"])
         self.run(monkeypatch, conn, ["--start", "2026-09-21"])
         stored = sorted(d for _, d in conn.stored)
-        assert days[3] not in stored and days[6] not in stored
-        assert len(stored) == 8
-        assert sorted(r[3] for r in conn.rejections) == [V.HIGH_BELOW_LOW, V.PRICE_SPIKE]
+        assert days[3] in stored and days[6] not in stored
+        assert len(stored) == 9
+        assert [r[3] for r in conn.rejections] == [V.HIGH_BELOW_LOW]
         status = pipeline_status(conn)
-        assert status[0] == "success" and "2 rows rejected" in status[3]
+        assert status[0] == "success" and "1 rows rejected" in status[3]
 
     def test_hourly_fallback_is_insert_only(self, monkeypatch, fake_yf, frozen_now):
         frozen_now(NOW)
@@ -207,11 +207,11 @@ class TestDailyUpdate:
         fake_yf["TCS.NS"] = FakeTicker(daily=bars(days, [10, 10.1, 10.2, 10.3, 10.4]))
         conn = self.conn(["INFY.NS", "TCS.NS"], {"INFY.NS": date(2026, 10, 12), "TCS.NS": date(2026, 10, 12)})
         self.run(monkeypatch, conn)
-        assert ("INFY.NS", date(2026, 10, 9)) not in conn.stored
+        assert ("INFY.NS", date(2026, 10, 9)) in conn.stored
         assert len([k for k in conn.stored if k[0] == "TCS.NS"]) == 5
         status, written, failed, message, _ = pipeline_status(conn)
-        assert status == "success" and failed == [] and written == 9
-        assert "1 rejected by validation" in message
+        assert status == "success" and failed == [] and written == 10
+        assert "0 rejected by validation" in message
 
     def test_empty_yahoo_response_counts_as_failure(self, monkeypatch, fake_yf, frozen_now):
         frozen_now(NOW)

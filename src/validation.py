@@ -44,6 +44,7 @@ class ValidationResult:
     valid: list = field(default_factory=list)
     rejected: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    suspect: list = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -123,22 +124,15 @@ def _validate_ticker(ticker, rows, previous, holidays, cfg, result):
     accepted = []
     ref = previous[1] if previous else None
     thr = cfg.jump_threshold
-    for i, r in enumerate(unique):
+    for r in unique:
         px = _price(r)
-        if ref:
-            move = px / ref - 1
-            if abs(move) > thr:
-                nxt = _price(unique[i + 1]) if i + 1 < len(unique) else None
-                reverts = (nxt is not None and abs(nxt / px - 1) > thr
-                           and (nxt / px - 1) * move < 0 and abs(nxt / ref - 1) <= thr)
-                if reverts:
-                    result.rejected.append(Issue(ticker, r[1], PRICE_SPIKE, REJECT,
-                                                 f"{move:+.1%} then {nxt / px - 1:+.1%} next session (isolated spike)", r))
-                    continue
-                result.warnings.append(Issue(ticker, r[1], PRICE_JUMP, WARN,
-                                             f"{move:+.1%} vs previous session (kept: not reversed)", r))
+        if ref and abs(px / ref - 1) > thr:
+            result.warnings.append(Issue(ticker, r[1], PRICE_JUMP, WARN,
+                                         f"{px / ref - 1:+.1%} vs the last unflagged session (suspect until later sessions confirm or reverse it)", r))
+            result.suspect.append(r)
+        else:
+            ref = px
         accepted.append(r)
-        ref = px
 
     dates = ([previous[0]] if previous else []) + [r[1] for r in accepted]
     for d0, d1 in zip(dates, dates[1:]):

@@ -14,6 +14,7 @@ import logging
 from datetime import date
 
 import fetch_config
+import quality
 from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
@@ -42,6 +43,7 @@ def main():
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
                     s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
                     g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)
+                    quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
                     updated += s.updated
                     inserted += s.inserted + g.inserted
                     if s.updated_dates:
