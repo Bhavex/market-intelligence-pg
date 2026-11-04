@@ -36,7 +36,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat backtest_output/summary_database.csv >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: backtest-output
           path: backtest_output/

@@ -95,7 +95,7 @@ jobs:
         run: python src/trust_report.py >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the derived measurements (no prices)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trust-study-output
           path: |

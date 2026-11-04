@@ -26,9 +26,9 @@ project at VIT Vellore.
   - A view rewrite found by the study cut pipeline-health queries **from 20.2 ms to 0.65 ms**.
 
   Details: [PERFORMANCE.md](docs/PERFORMANCE.md).
-- **Honest backtest:** after realistic NSE costs (11.2 bp one-way), sector rotation ends at ₹359 against ₹350 for
-  buy-and-hold over Feb 2015 – Oct 2026, but with **Sharpe 0.62 vs 0.84** and a deeper drawdown. In other words, it
-  does not beat the benchmark on a risk-adjusted basis ([BACKTEST.md](docs/BACKTEST.md)).
+- **Honest backtest on real Neon data (May 2015 – Nov 2026):** after 11.2 bp NSE costs, momentum returns **9.6%** a
+  year and sector rotation **10.2%**, against **12.5%** for equal-weight buy-and-hold (Sharpe 0.60 and 0.59 vs 0.89).
+  Neither signal beats the benchmark ([BACKTEST.md](docs/BACKTEST.md)).
 - **267 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
   a throwaway PostgreSQL 17 container.
 
@@ -129,18 +129,20 @@ See [docs/API.md](docs/API.md).
 same 25 stocks. Signals use data only up to the signal close; trades fill at the next session's close; every rupee
 traded pays 11.2 bp.
 
-| Real data, Feb 2015 – Oct 2026, after costs | ₹100 becomes | CAGR | Sharpe | Max drawdown |
+| Real Neon data, 4 May 2015 – 4 Nov 2026, after costs | ₹100 becomes | CAGR | Sharpe | Max drawdown |
 |---|---:|---:|---:|---:|
-| Sector-strength rotation | 359 | 11.5% | 0.62 | −31.6% |
-| Equal-weight, monthly rebalanced | 420 | 13.0% | **0.94** | −21.7% |
-| **Buy-and-hold benchmark** | 350 | 11.3% | 0.84 | **−19.4%** |
+| Momentum top 5 | 282 | 9.6% | 0.60 | −33.2% |
+| Sector-strength rotation | 300 | 10.2% | 0.59 | −30.1% |
+| Equal-weight, monthly rebalanced | **437** | **14.0%** | **0.98** | −30.7% |
+| **Buy-and-hold benchmark** | 379 | 12.5% | 0.89 | −30.8% |
 
-![Real-data backtest](docs/img/backtest_real_sector_rotation.png)
+![Real Neon backtest](docs/img/backtest_neon_real.png)
 
-**The signals do not beat the benchmark on a risk-adjusted basis.** Rotation's small gross edge is consumed by
-switching sectors in 80% of months. The stock-level momentum rule needs real daily prices that this build environment
-could not reach, so it is not reported. Its engine is verified on synthetic data, and a manual workflow runs it on the
-production database. Full write-up: [docs/BACKTEST.md](docs/BACKTEST.md).
+**Neither signal beats the benchmark.** Momentum loses even before costs (11.1% against 12.5% a year). Sector rotation's
+0.2 pp gross edge is consumed by trading about 20× its capital a year. Only monthly rebalancing to equal weight beat
+buy-and-hold. These figures come from the **Signal backtest (real data)** workflow, which runs on the production Neon
+database ([run 41892962103](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41892962103)). Full write-up:
+[docs/BACKTEST.md](docs/BACKTEST.md).
 
 ## Query performance
 
