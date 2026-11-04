@@ -45,6 +45,7 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--end", type=date.fromisoformat, default=None)
     ap.add_argument("--replace", action="store_true", help="delete existing prices first")
+    ap.add_argument("--extra-tickers", type=int, default=0, help="add synthetic research-only tickers (in_dashboard = FALSE)")
     args = ap.parse_args()
 
     url = os.environ.get("DATABASE_URL")
@@ -62,10 +63,17 @@ def main():
         end = args.end or conn.execute("SELECT expected_latest_trading_day()").fetchone()[0]
         start = end - timedelta(days=int(args.years * 365.25))
         holidays = [r[0] for r in conn.execute("SELECT holiday_date FROM market_holidays")]
-        tickers = tuple(r[0] for r in conn.execute(
-            "SELECT ticker FROM companies WHERE is_active AND in_dashboard ORDER BY ticker"))
+        sectors = [r[0] for r in conn.execute("SELECT sector_id FROM sectors ORDER BY sector_id LIMIT 5")]
+        for i in range(1, args.extra_tickers + 1):
+            conn.execute("""INSERT INTO companies (ticker, company_name, sector_id, in_dashboard, cap_group)
+                            VALUES (%s, %s, %s, FALSE, %s) ON CONFLICT (ticker) DO NOTHING""",
+                         (f"SYN{i:03d}.NS", f"Synthetic research stock {i}", sectors[i % len(sectors)],
+                          "small" if i % 3 == 0 else "large"))
+        rows = conn.execute("""SELECT c.ticker, s.sector_name FROM companies c JOIN sectors s USING (sector_id)
+                               WHERE c.is_active AND (c.in_dashboard OR c.ticker LIKE 'SYN%%') ORDER BY c.ticker""").fetchall()
+        tickers = tuple(r[0] for r in rows)
         cfg = SampleConfig(start=start, end=end, seed=args.seed, tickers=tickers)
-        df = generate_prices(cfg, holidays)
+        df = generate_prices(cfg, holidays, sector_of=dict(rows))
         cols = ["ticker", "price_date", "open", "high", "low", "close", "adj_close", "volume"]
         with conn.cursor() as cur:
             with cur.copy(f"COPY daily_prices ({', '.join(cols)}) FROM STDIN") as cp:

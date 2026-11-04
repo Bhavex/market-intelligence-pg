@@ -39,13 +39,14 @@ def trading_days(start: date, end: date, holidays=()) -> list:
     return out
 
 
-def generate_prices(cfg: SampleConfig = SampleConfig(), holidays=()) -> pd.DataFrame:
+def generate_prices(cfg: SampleConfig = SampleConfig(), holidays=(), sector_of: dict | None = None) -> pd.DataFrame:
+    sector_of = {**SECTOR_OF, **(sector_of or {})}
     rng = np.random.default_rng(cfg.seed)
     days = trading_days(cfg.start, cfg.end, holidays)
     n = len(days)
     dt = 1 / 252
     mkt = rng.normal((cfg.market_drift - cfg.market_vol ** 2 / 2) * dt, cfg.market_vol * np.sqrt(dt), n)
-    sectors = sorted({SECTOR_OF[t] for t in cfg.tickers})
+    sectors = sorted({sector_of[t] for t in cfg.tickers})
     sec_ret = {}
     for s in sectors:
         shocks = rng.normal(0, cfg.sector_vol * np.sqrt(dt), n)
@@ -58,7 +59,7 @@ def generate_prices(cfg: SampleConfig = SampleConfig(), holidays=()) -> pd.DataF
         sec_ret[s] = shocks + drift
     frames = []
     for i, t in enumerate(cfg.tickers):
-        s = SECTOR_OF[t]
+        s = sector_of[t]
         beta = rng.uniform(0.7, 1.3)
         idio = rng.normal(0, cfg.stock_vol * np.sqrt(dt), n)
         shocks = np.where(rng.random(n) < cfg.shock_prob, rng.normal(0, 0.06, n), 0.0)
