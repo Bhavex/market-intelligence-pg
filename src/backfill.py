@@ -5,8 +5,12 @@ import argparse
 import logging
 from datetime import date
 
-from db import active_tickers, get_conn, pipeline_run
-from prices import fetch_rows_ex, upsert_rows
+import fetch_config
+import ledger
+import observations
+import quality
+from db import active_tickers, get_conn, pipeline_run, record_settings
+from prices import FetchError, fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
 
 
@@ -22,14 +26,21 @@ def main():
         tickers = args.tickers or active_tickers(conn)
         holidays = load_holidays(conn)
         with pipeline_run(conn, "backfill") as run:
+            fetch_config.check_version()
+            settings_daily = fetch_config.register(conn, "1d")
+            settings_hourly = fetch_config.register(conn, "1h")
+            record_settings(conn, run["run_id"], settings_daily)
             rejected = 0
             for i, t in enumerate(tickers, 1):
                 try:
                     f = fetch_rows_ex(t, start)
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "backfill", settings_daily, settings_hourly)
+                    observations.record_fetched(conn, f, checked.result, fetch_ids)
                     rejected += len(checked.result.rejected)
-                    s = upsert_rows(conn, checked.daily)
-                    g = upsert_rows(conn, checked.fallback, insert_only=True)
+                    s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)
+                    quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
                     n = s.total + g.total
                     run["rows_upserted"] += s.written + g.written
                     print(f"[{i}/{len(tickers)}] {t}: {n} rows ({s.written + g.written} written, "
@@ -38,6 +49,8 @@ def main():
                         run["tickers_failed"].append(t)
                 except Exception as exc:
                     conn.rollback()
+                    if isinstance(exc, FetchError):
+                        ledger.record_error(conn, exc.record, run["run_id"], "backfill", settings_daily)
                     run["tickers_failed"].append(t)
                     print(f"[{i}/{len(tickers)}] {t}: FAILED ({exc})")
 

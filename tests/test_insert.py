@@ -36,8 +36,14 @@ class TestUpsertRows:
         prices.upsert_rows(fake_conn, [prow(date(2026, 10, 12))], insert_only=True)
         sql_daily, rows_daily = fake_conn.executemany_calls[0]
         sql_fb, rows_fb = fake_conn.executemany_calls[1]
-        assert rows_daily[0][-1] == "yahoo_daily" and "DO UPDATE" in sql_daily
-        assert rows_fb[0][-1] == "yahoo_hourly" and "DO NOTHING" in sql_fb
+        assert rows_daily[0][8] == "yahoo_daily" and "DO UPDATE" in sql_daily
+        assert rows_fb[0][8] == "yahoo_hourly" and "DO NOTHING" in sql_fb
+
+    def test_settings_id_is_stored_with_each_row(self, fake_conn, frozen_now):
+        frozen_now(NOW)
+        prices.upsert_rows(fake_conn, [prow(date(2026, 10, 9))], settings_id=42)
+        sql, rows = fake_conn.executemany_calls[0]
+        assert rows[0][9] == 42 and "settings_id" in sql
 
     def test_insert_only_never_overwrites(self, fake_conn, frozen_now):
         frozen_now(NOW)
@@ -92,6 +98,15 @@ class TestFetch:
         assert [r[1] for r in f.daily] == [date(2026, 10, 9), date(2026, 10, 13)]
         assert f.fallback == [("INFY.NS", date(2026, 10, 12), 100.5, 102.0, 100.0, 101.2, 101.2, 30)]
 
+    def test_every_price_flag_is_explicit(self, fake_yf, frozen_now):
+        frozen_now(NOW)
+        t = FakeTicker(daily=bars(["2026-10-13"], [100]))
+        fake_yf["INFY.NS"] = t
+        prices.fetch_rows_ex("INFY.NS", date(2026, 10, 13))
+        call = t.calls[0]
+        for flag in ("auto_adjust", "back_adjust", "repair", "actions", "prepost", "keepna", "rounding"):
+            assert call[flag] is False, flag
+
     def test_request_is_unadjusted_with_explicit_end(self, fake_yf, frozen_now):
         frozen_now(NOW)
         t = FakeTicker(daily=bars(["2026-10-13"], [100]))
@@ -105,9 +120,10 @@ class TestFetch:
         frozen_now(NOW)
         t = FakeTicker(error=ConnectionError("yahoo down"))
         fake_yf["INFY.NS"] = t
-        with pytest.raises(ConnectionError):
+        with pytest.raises(prices.FetchError) as err:
             prices.fetch_rows_ex("INFY.NS", date(2026, 10, 1))
         assert len(t.calls) == 3
+        assert err.value.record.status == "error" and "ConnectionError" in err.value.record.error
 
 
 def pipeline_status(conn):
@@ -140,11 +156,11 @@ class TestBackfill:
         conn = base_conn(["INFY.NS"])
         self.run(monkeypatch, conn, ["--start", "2026-09-21"])
         stored = sorted(d for _, d in conn.stored)
-        assert days[3] not in stored and days[6] not in stored
-        assert len(stored) == 8
-        assert sorted(r[3] for r in conn.rejections) == [V.HIGH_BELOW_LOW, V.PRICE_SPIKE]
+        assert days[3] in stored and days[6] not in stored
+        assert len(stored) == 9
+        assert [r[3] for r in conn.rejections] == [V.HIGH_BELOW_LOW]
         status = pipeline_status(conn)
-        assert status[0] == "success" and "2 rows rejected" in status[3]
+        assert status[0] == "success" and "1 rows rejected" in status[3]
 
     def test_hourly_fallback_is_insert_only(self, monkeypatch, fake_yf, frozen_now):
         frozen_now(NOW)
@@ -155,7 +171,7 @@ class TestBackfill:
         fake_yf["INFY.NS"] = FakeTicker(daily=daily, hourly=hourly)
         conn = base_conn(["INFY.NS"])
         self.run(monkeypatch, conn, ["--start", "2026-10-09"])
-        modes = [("DO NOTHING" in sql, [r[-1] for r in rows]) for sql, rows in conn.executemany_calls
+        modes = [("DO NOTHING" in sql, [r[8] for r in rows]) for sql, rows in conn.executemany_calls
                  if "daily_prices" in sql]
         assert (False, ["yahoo_daily", "yahoo_daily"]) in modes
         assert (True, ["yahoo_hourly"]) in modes
@@ -192,11 +208,11 @@ class TestDailyUpdate:
         fake_yf["TCS.NS"] = FakeTicker(daily=bars(days, [10, 10.1, 10.2, 10.3, 10.4]))
         conn = self.conn(["INFY.NS", "TCS.NS"], {"INFY.NS": date(2026, 10, 12), "TCS.NS": date(2026, 10, 12)})
         self.run(monkeypatch, conn)
-        assert ("INFY.NS", date(2026, 10, 9)) not in conn.stored
+        assert ("INFY.NS", date(2026, 10, 9)) in conn.stored
         assert len([k for k in conn.stored if k[0] == "TCS.NS"]) == 5
         status, written, failed, message, _ = pipeline_status(conn)
-        assert status == "success" and failed == [] and written == 9
-        assert "1 rejected by validation" in message
+        assert status == "success" and failed == [] and written == 10
+        assert "0 rejected by validation" in message
 
     def test_empty_yahoo_response_counts_as_failure(self, monkeypatch, fake_yf, frozen_now):
         frozen_now(NOW)

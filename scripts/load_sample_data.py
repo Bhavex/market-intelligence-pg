@@ -59,7 +59,7 @@ def main():
             print(f"daily_prices already has {n_existing} rows; nothing loaded (use --replace)")
             return
         if args.replace:
-            conn.execute("TRUNCATE daily_prices, price_versions, rejected_prices, pipeline_runs CASCADE")
+            conn.execute("TRUNCATE daily_prices, price_versions, rejected_prices, quality_states, price_selection, price_observations, fetch_log, pipeline_runs CASCADE")
         end = args.end or conn.execute("SELECT expected_latest_trading_day()").fetchone()[0]
         start = end - timedelta(days=int(args.years * 365.25))
         holidays = [r[0] for r in conn.execute("SELECT holiday_date FROM market_holidays")]

@@ -1,12 +1,14 @@
 """Fetch daily OHLCV from Yahoo Finance and upsert into daily_prices."""
+import hashlib
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
 
 import yfinance as yf
 
 import db
+import fetch_config
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -15,8 +17,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # in sql/07_trading_calendar.sql, which also uses 16:30.
 FINAL_AFTER = dtime(16, 30)
 
-_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume, source)"
-_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume, source, settings_id)"
+_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
 # source is part of the comparison: an hourly-rebuilt row later confirmed by the daily candle is
 # re-labelled (and versioned) even when the numbers are identical.
 _PRICE_FIELDS = ("open", "high", "low", "close", "adj_close", "volume", "source")
@@ -28,7 +30,7 @@ INSERT INTO daily_prices {_COLS} {_VALUES}
 ON CONFLICT (ticker, price_date) DO UPDATE SET
     open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
     close = EXCLUDED.close, adj_close = EXCLUDED.adj_close,
-    volume = EXCLUDED.volume, source = EXCLUDED.source, loaded_at = now()
+    volume = EXCLUDED.volume, source = EXCLUDED.source, settings_id = EXCLUDED.settings_id, loaded_at = now()
 WHERE ({", ".join("daily_prices." + c for c in _PRICE_FIELDS if c != "adj_close")})
       IS DISTINCT FROM ({", ".join("EXCLUDED." + c for c in _PRICE_FIELDS if c != "adj_close")})
    -- adj_close is recomputed by Yahoo on every download: ignore last-digit wobble (a real dividend
@@ -87,10 +89,10 @@ def _num(x):
     return None if math.isnan(x) else round(x, 4)
 
 
-def _history(ticker: str, retries: int = 3, **kwargs):
+def _history(ticker: str, retries: int = 3, interval: str = "1d", **kwargs):
     for attempt in range(1, retries + 1):
         try:
-            return yf.Ticker(ticker).history(auto_adjust=False, actions=False, **kwargs)
+            return yf.Ticker(ticker).history(**fetch_config.history_kwargs(interval), **kwargs)
         except Exception:
             if attempt == retries:
                 raise
@@ -148,6 +150,41 @@ class Fetched:
     daily: list              # rows from Yahoo's daily candles (authoritative)
     fallback: list           # rows rebuilt from hourly bars for weekdays Yahoo's daily data lacks (approximate)
     held_back: int = 0       # valid bars not stored because the session is not final yet
+    requests: list = field(default_factory=list)
+
+
+PARSER_VERSION = "yahoo-history-parser-v3"
+
+
+@dataclass
+class FetchRecord:
+    symbol: str
+    interval: str
+    params: dict
+    retrieved_at: datetime
+    response_sha256: str
+    rows_returned: int
+    rows_parsed: int
+    status: str
+    error: str | None = None
+
+
+def frame_sha256(df) -> str:
+    if df is None or len(df) == 0:
+        return hashlib.sha256(b"").hexdigest()
+    body = df.reset_index().to_csv(index=False, float_format="%.17g", date_format="%Y-%m-%dT%H:%M:%S%z")
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _timed_history(ticker, retries, interval, **params):
+    retrieved_at = datetime.now(timezone.utc)
+    try:
+        df = _history(ticker, retries, interval=interval, **params)
+    except Exception as exc:
+        return None, FetchRecord(ticker, interval, params, retrieved_at, frame_sha256(None), 0, 0, "error",
+                                 f"{type(exc).__name__}: {exc}"[:500])
+    n = 0 if df is None else len(df)
+    return df, FetchRecord(ticker, interval, params, retrieved_at, frame_sha256(df), n, 0, "ok" if n else "empty")
 
 
 def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
@@ -161,24 +198,37 @@ def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
        These rows are approximate (first/last hourly price, summed hourly volume), so they are
        returned separately and must only fill gaps, never overwrite a stored row."""
     end = _now().date() + timedelta(days=2)
-    df = _history(ticker, retries, interval="1d", start=start.isoformat(), end=end.isoformat())
+    df, rec = _timed_history(ticker, retries, "1d", start=start.isoformat(), end=end.isoformat())
+    if rec.status == "error":
+        raise FetchError(rec)
     daily, held_back = _to_rows(ticker, df)
+    rec.rows_parsed = len(daily)
+    requests = [rec]
 
     recent_start = max(start, _now().date() - timedelta(days=30))
     wanted = {recent_start + timedelta(days=i) for i in range((_now().date() - recent_start).days + 1)}
     gaps = {d for d in wanted if d.weekday() < 5 and d not in daily and _session_finished(d)}
     fallback = {}
     if gaps:
-        try:
-            hourly = _history(ticker, retries, interval="1h", period="1mo")
-            fallback = {d: row for d, row in _rows_from_hourly(ticker, hourly).items() if d in gaps}
-        except Exception:
-            pass                                    # daily data already loaded; strict check will flag gaps
-    return Fetched([daily[d] for d in sorted(daily)], [fallback[d] for d in sorted(fallback)], held_back)
+        hourly, hrec = _timed_history(ticker, retries, "1h", period="1mo")
+        requests.append(hrec)
+        if hourly is not None and len(hourly):
+            try:
+                fallback = {d: row for d, row in _rows_from_hourly(ticker, hourly).items() if d in gaps}
+            except Exception as exc:
+                hrec.status, hrec.error = "parse_error", f"{type(exc).__name__}: {exc}"[:500]
+            hrec.rows_parsed = len(fallback)
+    return Fetched([daily[d] for d in sorted(daily)], [fallback[d] for d in sorted(fallback)], held_back, requests)
+
+
+class FetchError(RuntimeError):
+    def __init__(self, record: FetchRecord):
+        super().__init__(record.error or "fetch failed")
+        self.record = record
 
 
 def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,
-                source: str | None = None, intraday: bool = False) -> UpsertStats:
+                source: str | None = None, intraday: bool = False, settings_id: int | None = None) -> UpsertStats:
     """Upsert rows and report how many were inserted, updated (value changed) or unchanged.
     insert_only=True never overwrites an existing row (used for approximate fallback rows).
     Rows are (ticker, date, open, high, low, close, adj_close, volume); the provenance label
@@ -194,7 +244,7 @@ def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool
     run_id = db.current_run_id()
     if run_id is not None:   # provenance for the versioning trigger; transaction-local, so it is
         conn.execute("SELECT set_config('app.run_id', %s, true)", (str(run_id),))  # safe behind a pooler
-    rows = [tuple(r) if len(r) == 9 else tuple(r) + (src,) for r in rows]
+    rows = [(tuple(r[:9]) if len(r) >= 9 else tuple(r) + (src,)) + (settings_id,) for r in rows]
     updated_dates = []
     with conn.cursor() as cur:
         cur.executemany(INSERT_ONLY_SQL if insert_only else UPSERT_SQL, rows, returning=True)

@@ -158,8 +158,9 @@ def test_screen_then_upsert_round_trip(conn):
     days = weekdays(START, 6)
     rows = [("INFY.NS", d, c, c * 1.01, c * 0.99, c, c, 100) for d, c in zip(days, [100, 101, 250, 102, 103, 104])]
     checked = V.screen(conn, "INFY.NS", rows, [], START)
+    assert [r[1] for r in checked.result.suspect] == [days[2]]
     s = prices.upsert_rows(conn, checked.daily, commit=False)
-    assert s.inserted == 5
+    assert s.inserted == 6
     stored = [r[0] for r in conn.execute("""SELECT price_date FROM daily_prices WHERE ticker = 'INFY.NS'
                                             AND price_date < '2003-01-01' ORDER BY 1""").fetchall()]
-    assert days[2] not in stored and len(stored) == 5
+    assert stored == days

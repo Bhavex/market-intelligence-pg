@@ -121,36 +121,43 @@ class TestDuplicates:
 
 
 class TestJumps:
-    def test_isolated_spike_that_reverts_is_rejected(self):
+    def test_spike_is_suspect_not_rejected_at_ingest(self):
         res = V.validate_rows(series([100, 150, 101]))
-        assert checks(res) == [(D(2026, 10, 6), V.PRICE_SPIKE)]
-        assert [r[1] for r in res.valid] == [D(2026, 10, 5), D(2026, 10, 7)]
+        assert res.ok
+        assert [r[1] for r in res.suspect] == [D(2026, 10, 6)]
+        assert [r[1] for r in res.valid] == [D(2026, 10, 5), D(2026, 10, 6), D(2026, 10, 7)]
 
-    def test_downward_spike_is_rejected(self):
+    def test_ingest_decision_does_not_depend_on_the_next_row(self):
+        with_next = V.validate_rows(series([100, 150, 101]))
+        without_next = V.validate_rows(series([100, 150]))
+        assert [r[1] for r in with_next.suspect] == [r[1] for r in without_next.suspect] == [D(2026, 10, 6)]
+
+    def test_downward_spike_is_suspect(self):
         res = V.validate_rows(series([100, 40, 99]))
-        assert checks(res) == [(D(2026, 10, 6), V.PRICE_SPIKE)]
+        assert [r[1] for r in res.suspect] == [D(2026, 10, 6)] and res.ok
 
-    def test_persistent_jump_is_kept_with_warning(self):
+    def test_persistent_jump_rows_stay_suspect_until_reassessed(self):
         res = V.validate_rows(series([100, 130, 131, 129]))
         assert res.ok
-        assert checks(res, "warn") == [(D(2026, 10, 6), V.PRICE_JUMP)]
+        assert checks(res, "warn") == [(D(2026, 10, 6), V.PRICE_JUMP), (D(2026, 10, 7), V.PRICE_JUMP),
+                                       (D(2026, 10, 8), V.PRICE_JUMP)]
 
-    def test_jump_on_last_row_cannot_be_confirmed_and_is_kept(self):
+    def test_jump_on_last_row_is_suspect(self):
         res = V.validate_rows(series([100, 101, 140]))
         assert res.ok and len(res.valid) == 3
         assert checks(res, "warn") == [(D(2026, 10, 7), V.PRICE_JUMP)]
 
     def test_move_below_threshold_is_silent(self):
         res = V.validate_rows(series([100, 119, 100]))
-        assert res.ok and res.warnings == []
+        assert res.ok and res.warnings == [] and res.suspect == []
 
     def test_previous_stored_price_is_used_for_first_row(self):
         res = V.validate_rows(series([150, 101]), previous={"INFY.NS": (D(2026, 10, 2), 100.0)})
-        assert checks(res) == [(D(2026, 10, 5), V.PRICE_SPIKE)]
+        assert [r[1] for r in res.suspect] == [D(2026, 10, 5)]
 
-    def test_rejection_does_not_cascade(self):
+    def test_suspect_row_is_not_used_as_the_next_reference(self):
         res = V.validate_rows(series([100, 300, 100, 101, 102]))
-        assert len(res.rejected) == 1 and len(res.valid) == 4
+        assert [r[1] for r in res.suspect] == [D(2026, 10, 6)] and len(res.valid) == 5
 
     def test_adj_close_is_used_so_dividend_adjusted_history_is_not_a_jump(self):
         rows = [row(D(2026, 10, 5), close=100, adj=50), row(D(2026, 10, 6), close=100, adj=50.5)]
@@ -159,7 +166,7 @@ class TestJumps:
     def test_threshold_is_configurable(self):
         cfg = V.ValidationConfig(jump_threshold=0.05)
         res = V.validate_rows(series([100, 110, 100]), config=cfg)
-        assert checks(res) == [(D(2026, 10, 6), V.PRICE_SPIKE)]
+        assert [r[1] for r in res.suspect] == [D(2026, 10, 6)]
 
 
 class TestGaps:
@@ -231,7 +238,7 @@ class TestDatabaseHelpers:
         daily = [row(D(2026, 10, 5), 160), row(D(2026, 10, 6), 101)]
         fallback = [row(D(2026, 10, 7), 102) + ("yahoo_hourly",)]
         out = V.screen(conn, "INFY.NS", daily, fallback, D(2026, 10, 5), run_id=3)
-        assert [r[1] for r in out.daily] == [D(2026, 10, 6)]
+        assert [r[1] for r in out.daily] == [D(2026, 10, 5), D(2026, 10, 6)]
         assert [r[1] for r in out.fallback] == [D(2026, 10, 7)]
-        assert [i.check for i in out.result.rejected] == [V.PRICE_SPIKE]
-        assert len(conn.rejections) == 1
+        assert out.result.rejected == [] and [r[1] for r in out.result.suspect] == [D(2026, 10, 5)]
+        assert conn.rejections == []

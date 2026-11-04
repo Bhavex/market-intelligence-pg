@@ -20,6 +20,8 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import yfinance as yf
 
+import fetch_config
+
 from db import active_tickers, get_conn
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -30,7 +32,7 @@ SESSIONS_SQL = """
 
 
 def yahoo_daily(ticker):
-    df = yf.Ticker(ticker).history(period="2mo", interval="1d", auto_adjust=False, actions=False)
+    df = yf.Ticker(ticker).history(period="2mo", **fetch_config.history_kwargs("1d"))
     return {ts.date(): r for ts, r in df.iterrows() if pd.notna(r.get("Close"))}
 
 

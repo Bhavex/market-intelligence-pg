@@ -12,6 +12,9 @@ after_prod/
 *daily_prices*.csv
 bhavcopy*
 *bhav*.csv
+!tests/fixtures/bhavcopy/
+!tests/fixtures/bhavcopy/*.csv
+!src/bhavcopy.py
 *.parquet
 *.dump
 data/raw/

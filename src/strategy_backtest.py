@@ -29,6 +29,63 @@ class BacktestConfig:
     warmup_days: int = 61
 
 
+class QualityTimeline:
+    def __init__(self, states: pd.DataFrame | None = None, excluded=("suspect", "rejected"),
+                 decision_hour: int = 23, decision_minute: int = 59):
+        cols = ["ticker", "price_date", "state", "decided_at"]
+        df = pd.DataFrame(columns=cols) if states is None or len(states) == 0 else states[cols].copy()
+        df["price_date"] = pd.to_datetime(df["price_date"])
+        df["decided_at"] = pd.to_datetime(df["decided_at"], utc=True)
+        self.states = df.sort_values("decided_at", kind="stable").reset_index(drop=True)
+        self.excluded = set(excluded)
+        self.decision_hour = decision_hour
+        self.decision_minute = decision_minute
+
+    def __len__(self):
+        return len(self.states)
+
+    def decision_time(self, d) -> pd.Timestamp:
+        d = pd.Timestamp(d)
+        return pd.Timestamp(d.year, d.month, d.day, self.decision_hour, self.decision_minute,
+                            tz="Asia/Kolkata").tz_convert("UTC")
+
+    def excluded_at(self, ts: pd.Timestamp) -> list:
+        known = self.states[self.states["decided_at"] <= ts]
+        if known.empty:
+            return []
+        latest = known.groupby(["ticker", "price_date"], sort=False).tail(1)
+        bad = latest[latest["state"].isin(self.excluded)]
+        return list(zip(bad["ticker"], bad["price_date"]))
+
+    def mask(self, d, px: pd.DataFrame) -> pd.DataFrame:
+        if self.states.empty:
+            return px
+        cells = [(t, day) for t, day in self.excluded_at(self.decision_time(d)) if t in px.columns and day in px.index]
+        if not cells:
+            return px
+        out = px.copy()
+        for t, day in cells:
+            out.loc[day, t] = np.nan
+        return out
+
+
+class Membership:
+    def __init__(self, intervals: pd.DataFrame):
+        df = intervals[["ticker", "valid_from", "valid_to"]].copy()
+        df["valid_from"] = pd.to_datetime(df["valid_from"])
+        df["valid_to"] = pd.to_datetime(df["valid_to"])
+        self.intervals = df.reset_index(drop=True)
+
+    def members(self, d) -> set:
+        d = pd.Timestamp(d)
+        live = (self.intervals["valid_from"] <= d) & (self.intervals["valid_to"].isna() | (self.intervals["valid_to"] > d))
+        return set(self.intervals.loc[live, "ticker"])
+
+    def change_dates(self) -> list:
+        dates = set(self.intervals["valid_from"]) | set(self.intervals["valid_to"].dropna())
+        return sorted(dates)
+
+
 @dataclass
 class Result:
     name: str
@@ -68,7 +125,8 @@ def equal_weights(px: pd.DataFrame) -> pd.Series:
 
 
 def simulate(px: pd.DataFrame, weight_fn: Callable[[pd.DataFrame], pd.Series], cfg: BacktestConfig, name: str,
-             rebalance: str = "monthly") -> Result:
+             rebalance: str = "monthly", timeline: QualityTimeline | None = None,
+             membership: Membership | None = None) -> Result:
     px = px.sort_index()
     rets = px.pct_change(fill_method=None).fillna(0.0)
     dates = px.index
@@ -80,11 +138,24 @@ def simulate(px: pd.DataFrame, weight_fn: Callable[[pd.DataFrame], pd.Series], c
     for d in candidates:
         exec_pos = position[d] + cfg.lag_days
         if exec_pos < len(dates):
-            target = weight_fn(px.iloc[: position[d] + 1])
+            known = px.iloc[: position[d] + 1]
+            if membership is not None:
+                known = known[[c for c in known.columns if c in membership.members(d)]]
+            if timeline is not None:
+                known = timeline.mask(d, known)
+            target = weight_fn(known)
             if len(target):
                 orders[dates[exec_pos]] = (d, target.reindex(px.columns).fillna(0.0))
     r_all = rets.to_numpy()
     targets = {position[d]: (sig, t.to_numpy()) for d, (sig, t) in orders.items()}
+    reconstitute = {}
+    if membership is not None and rebalance == "once" and orders:
+        first_exec = position[min(orders)]
+        for c in membership.change_dates():
+            pos = int(dates.searchsorted(c))
+            if first_exec < pos < len(dates) and pos not in targets:
+                reconstitute[pos] = dates[pos]
+    cols = list(px.columns)
     w = np.zeros(px.shape[1])
     n = len(dates)
     net, gross, turn = np.zeros(n), np.zeros(n), np.zeros(n)
@@ -95,6 +166,22 @@ def simulate(px: pd.DataFrame, weight_fn: Callable[[pd.DataFrame], pd.Series], c
         value = 1 + r
         if value > 0 and w.any():
             w = w * (1 + r_all[i]) / value
+        if i in reconstitute and i not in targets:
+            members = membership.members(reconstitute[i])
+            held = {cols[j] for j in np.flatnonzero(w > 0)}
+            leavers = sorted(held - members)
+            if leavers:
+                target = w.copy()
+                freed = sum(target[cols.index(t)] for t in leavers)
+                for t in leavers:
+                    target[cols.index(t)] = 0.0
+                joiners = [t for t in sorted(members - held) if t in cols and not np.isnan(px.iloc[i][t])]
+                if joiners:
+                    for t in joiners:
+                        target[cols.index(t)] += freed / len(joiners)
+                elif target.sum() > 0:
+                    target = target / target.sum() * (target.sum() + freed)
+                targets[i] = (reconstitute[i], target)
         if i in targets:
             signal_day, target = targets[i]
             t = float(np.abs(target - w).sum())
@@ -147,14 +234,16 @@ def metrics(returns: pd.Series, benchmark: pd.Series | None = None, periods_per_
     return out
 
 
-def run_all(px: pd.DataFrame, sectors: dict, cfg: BacktestConfig = BacktestConfig()) -> dict:
-    bench = simulate(px, equal_weights, cfg, "Equal-weight buy-and-hold", rebalance="once")
+def run_all(px: pd.DataFrame, sectors: dict, cfg: BacktestConfig = BacktestConfig(),
+            timeline: QualityTimeline | None = None, membership: Membership | None = None) -> dict:
+    kw = {"timeline": timeline, "membership": membership}
+    bench = simulate(px, equal_weights, cfg, "Equal-weight buy-and-hold", rebalance="once", **kw)
     results = {
         "momentum": simulate(px, lambda p: momentum_weights(p, cfg.momentum_lookback, cfg.momentum_top_n), cfg,
-                             f"Momentum top {cfg.momentum_top_n} ({cfg.momentum_lookback}d)"),
+                             f"Momentum top {cfg.momentum_top_n} ({cfg.momentum_lookback}d)", **kw),
         "sector_strength": simulate(px, lambda p: sector_strength_weights(p, sectors, cfg.sector_lookback, cfg.sector_top_k),
-                                    cfg, f"Sector strength top {cfg.sector_top_k} ({cfg.sector_lookback}d)"),
-        "equal_weight_rebalanced": simulate(px, equal_weights, cfg, "Equal-weight, monthly rebalanced"),
+                                    cfg, f"Sector strength top {cfg.sector_top_k} ({cfg.sector_lookback}d)", **kw),
+        "equal_weight_rebalanced": simulate(px, equal_weights, cfg, "Equal-weight, monthly rebalanced", **kw),
         "benchmark": bench,
     }
     start = max(r.returns.index[0] for r in results.values())
@@ -195,6 +284,22 @@ def published_rotation(path: Path, cost_bp: float = REALISTIC_BP) -> dict:
     return {"months": len(d), "first_month": str(d.index[0]), "last_month": str(d.index[-1]),
             "switches": switches, "cost_bp": cost_bp, "reproduction_error_10bp": reproduction_error,
             "metrics": table, "series": series}
+
+
+def load_quality_timeline(src) -> QualityTimeline:
+    exists = src.query("SELECT to_regclass('public.quality_states') IS NOT NULL AS ok")["ok"].iloc[0]
+    if not exists:
+        return QualityTimeline()
+    return QualityTimeline(src.query("""SELECT ticker, price_date, state, decided_at FROM quality_states
+                                        ORDER BY decided_at, state_id"""))
+
+
+def load_membership(src, universe: str = "dashboard_25") -> Membership | None:
+    exists = src.query("SELECT to_regclass('public.universe_membership') IS NOT NULL AS ok")["ok"].iloc[0]
+    if not exists:
+        return None
+    df = src.query("""SELECT ticker, valid_from, valid_to FROM v_universe_membership WHERE universe = %s""", (universe,))
+    return Membership(df) if len(df) else None
 
 
 def load_db_panel(url: str):
@@ -345,12 +450,19 @@ def main():
         if not url:
             raise SystemExit("DATABASE_URL is not set")
         px, sectors = load_db_panel(url)
-        tag, note = "database", "Daily adj_close from v_company_daily (read-only)."
+        from marketintel.datasource import DbSource
+        timeline = load_quality_timeline(DbSource(url))
+        membership = load_membership(DbSource(url))
+        tag, note = "database", (f"Daily adj_close from v_company_daily (read-only); {len(timeline)} quality states applied as "
+                                 f"known at each decision; universe membership "
+                                 f"{'as of each decision' if membership is not None else 'not available, today’s members used'}.")
     else:
         px, sectors = load_synthetic_panel()
         tag, note = "synthetic", "SYNTHETIC random-walk prices (marketintel/sample.py, seed 7): no real signal by construction."
+        timeline = None
+        membership = None
 
-    results = run_all(px, sectors, cfg)
+    results = run_all(px, sectors, cfg, timeline, membership)
     table = summarize(results)
     table.to_csv(args.out / f"summary_{tag}.csv")
     (args.out / f"summary_{tag}.json").write_text(json.dumps(

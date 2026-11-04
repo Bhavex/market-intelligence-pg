@@ -11,7 +11,7 @@ companies = load("companies")
 with st.sidebar:
     sectors = [s for s in SECTOR_ORDER if s in set(companies["sector_name"])]
     sector = st.selectbox("Sector", sectors, key="company_sector")
-    options = companies[companies["sector_name"] == sector]
+    options = companies[(companies["sector_name"] == sector) & companies["is_active"].fillna(True).astype(bool)]
     labels = {r.ticker: f"{r.company_name} ({r.ticker})" for r in options.itertuples()}
     ticker = st.selectbox("Company", list(labels), format_func=labels.get, key="company_ticker")
     start, end = sidebar_dates(365, key="company_range")

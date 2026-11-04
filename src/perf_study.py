@@ -58,6 +58,14 @@ QUERIES = {
         "used_by": "dashboard Pipeline health; GET /v1/pipeline/status",
         "sql": "SELECT * FROM v_data_freshness",
     },
+    "freshness_old_groupby": {
+        "used_by": "the v_data_freshness definition before the LATERAL rewrite, kept to publish its raw timings",
+        "sql": """SELECT c.ticker, MAX(p.price_date) AS latest_price_date,
+                         expected_latest_trading_day() AS expected_date,
+                         MAX(p.price_date) >= expected_latest_trading_day() AS is_fresh
+                  FROM companies c LEFT JOIN daily_prices p ON p.ticker = c.ticker
+                  WHERE c.is_active AND c.in_dashboard GROUP BY c.ticker""",
+    },
 }
 
 SCENARIOS = {
@@ -109,7 +117,8 @@ def measure(conn, sql: str, params: dict, runs: int, timeout_s: int) -> dict:
             with conn.transaction():
                 doc = conn.execute("EXPLAIN (FORMAT JSON) " + sql, params).fetchone()[0][0]
             return {"exec_ms": None, "timed_out_after_s": timeout_s, "plan_ms": None, "buffers": None,
-                    "rows": None, "plan": describe(doc["Plan"])}
+                    "rows": None, "plan": describe(doc["Plan"]), "exec_ms_runs": times, "plan_ms_runs": planning,
+                    "buffers_runs": buffers}
         if i == 0:
             continue
         plan = doc["Plan"]
@@ -119,7 +128,8 @@ def measure(conn, sql: str, params: dict, runs: int, timeout_s: int) -> dict:
         if doc["Execution Time"] > 5000 and len(times) >= 3:
             break
     return {"exec_ms": statistics.median(times), "plan_ms": statistics.median(planning),
-            "buffers": int(statistics.median(buffers)), "rows": plan.get("Actual Rows"), "plan": describe(plan)}
+            "buffers": int(statistics.median(buffers)), "rows": plan.get("Actual Rows"), "plan": describe(plan),
+            "exec_ms_runs": times, "plan_ms_runs": planning, "buffers_runs": buffers}
 
 
 def study(url: str, runs: int, ticker: str, timeout_s: int = 60) -> dict:

@@ -119,6 +119,7 @@ AS $$
 DECLARE
     v_sector SMALLINT;
     v_city   SMALLINT;
+    v_new_instrument INTEGER;
 BEGIN
     SELECT sector_id, hq_city_id INTO v_sector, v_city
     FROM companies WHERE ticker = p_old_ticker AND is_active
@@ -132,6 +133,23 @@ BEGIN
 
     INSERT INTO companies (ticker, company_name, sector_id, hq_city_id)
     VALUES (upper(p_new_ticker), p_new_name, v_sector, v_city);
+
+    IF to_regclass('public.universe_membership') IS NOT NULL THEN
+        INSERT INTO instruments (name) VALUES (p_new_name) RETURNING instrument_id INTO v_new_instrument;
+        UPDATE companies SET instrument_id = v_new_instrument WHERE ticker = upper(p_new_ticker);
+        INSERT INTO instrument_symbols (instrument_id, vendor, symbol, series, valid_from, evidence)
+        VALUES (v_new_instrument, 'yahoo', upper(p_new_ticker), 'EQ', CURRENT_DATE, 'replace_company');
+        UPDATE universe_membership m SET valid_to = CURRENT_DATE
+        FROM companies c
+        WHERE c.ticker = p_old_ticker AND m.instrument_id = c.instrument_id AND m.universe = 'dashboard_25'
+          AND m.valid_to IS NULL AND m.valid_from < CURRENT_DATE;
+        UPDATE instrument_symbols s SET valid_to = CURRENT_DATE
+        FROM companies c
+        WHERE c.ticker = p_old_ticker AND s.instrument_id = c.instrument_id AND s.vendor = 'yahoo'
+          AND s.symbol = p_old_ticker AND s.valid_to IS NULL AND s.valid_from < CURRENT_DATE;
+        INSERT INTO universe_membership (universe, instrument_id, sector_id, valid_from, reason, evidence)
+        VALUES ('dashboard_25', v_new_instrument, v_sector, CURRENT_DATE, 'replaced ' || p_old_ticker, 'replace_company');
+    END IF;
     -- The next daily_update run back-fills the new ticker's history automatically.
 END;
 $$;

@@ -8,6 +8,7 @@ Compares, on the live database:
 Every measurement runs inside a transaction that is rolled back, so nothing changes.
 Usage:  python src/benchmark.py"""
 import datetime as dt
+import json
 import statistics
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from db import get_conn
 
 RUNS = 7
 OUT = Path(__file__).resolve().parent.parent / "docs" / "BENCHMARKS.md"
+RAW = Path(__file__).resolve().parent.parent / "results" / "benchmarks" / "latest.json"
 NO_INDEX = ("SET LOCAL enable_indexscan = off",
             "SET LOCAL enable_bitmapscan = off",
             "SET LOCAL enable_indexonlyscan = off")
@@ -45,7 +47,11 @@ def measure(conn, sql, setup=()):
             p = conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + sql).fetchone()[0][0]
         times.append(p["Execution Time"])
         nodes = plan_nodes(p["Plan"])
+    measure.raw.append({"sql": " ".join(sql.split()), "setup": list(setup), "warmup_ms": times[0], "runs_ms": times[1:]})
     return statistics.median(times[1:]), nodes
+
+
+measure.raw = []
 
 
 def summarise_nodes(nodes):
@@ -174,7 +180,10 @@ def main():
         "daily load, so dashboards never wait for aggregation and readers are never blocked.",
     ]
     OUT.write_text("\n".join(lines) + "\n")
-    print(f"Wrote {OUT}")
+    RAW.parent.mkdir(parents=True, exist_ok=True)
+    RAW.write_text(json.dumps({"generated": dt.date.today().isoformat(), "server_version": version, "runs": RUNS,
+                               "measurements": measure.raw}, indent=2) + "\n")
+    print(f"Wrote {OUT} and {RAW}")
 
 
 if __name__ == "__main__":

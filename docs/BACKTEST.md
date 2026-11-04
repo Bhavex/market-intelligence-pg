@@ -24,7 +24,7 @@ Code: `src/strategy_backtest.py` · tests: `tests/test_strategy_backtest.py` (16
 | Equal-weight, monthly rebalanced | all stocks, reset to equal weight each month | one month |
 | **Benchmark**: equal-weight buy-and-hold | all 25 stocks bought once at equal weight, then left to drift | whole period |
 
-## Assumptions (built so the result can't flatter itself)
+## Assumptions, and what they do not rule out
 
 | Risk | How it is handled |
 |---|---|
@@ -34,7 +34,9 @@ Code: `src/strategy_backtest.py` · tests: `tests/test_strategy_backtest.py` (16
 | **Transaction costs** | **11.2 bp one way** on every rupee traded. This is NSE delivery with zero brokerage: STT 10 bp each side, stamp duty 1.5 bp on the buy, exchange and SEBI fees, and GST, from `src/india_costs.py`. Before it was used here, the cost model was checked by reproducing a previously stored cost-adjusted return series to within 1×10⁻⁶. |
 | **Daily drift** | Between rebalances, weights drift with each stock's daily return; turnover is measured against the drifted weights, not the targets. |
 | **Warm-up** | Signals need 60 sessions of history, so the first trade is on **4 May 2015**. All four series start that day, so they are compared over the same period. |
-| **Survivorship** | Not removed. The universe is *today's* 25 large caps (`TATAMOTORS.NS` was replaced after its demerger), which flatters every strategy, the benchmark included, by roughly the same amount. |
+| **Revised data** | The price history is the database's *current* values, so `adj_close` already includes later dividend and split rescaling, and any later Yahoo corrections. Decision timing has no look-ahead; the data is not point-in-time. |
+| **Survivorship** | The Neon run below used *today's* 25 large caps, which flatters every strategy, the benchmark included, by roughly the same amount. The engine now supports dated membership (`universe_membership`: Tata Motors until its demerger, Hero MotoCorp after it); each decision uses the members on its date, and the benchmark hands a leaver's weight to the joiner. Re-run the workflow after deploying to get that version. |
+| **Data quality known at the time** | The engine masks rows whose quality state *at the decision time* was suspect or rejected (`quality_states`). States are recorded from deployment of the new design on; the Neon run below predates it. |
 | **Not modelled** | Bid-ask spread, market impact, capital-gains tax, cash yield (Sharpe ratios use a zero risk-free rate). |
 
 Metrics:

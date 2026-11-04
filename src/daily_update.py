@@ -8,8 +8,12 @@ rows were inserted, updated, unchanged or held back. Signals are recomputed afte
 import logging
 from datetime import date
 
-from db import active_tickers, get_conn, pipeline_run
-from prices import _now, fetch_rows_ex, upsert_rows
+import fetch_config
+import ledger
+import observations
+import quality
+from db import active_tickers, get_conn, pipeline_run, record_settings
+from prices import FetchError, _now, fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
 
 DEFAULT_START = date(2015, 1, 1)
@@ -39,6 +43,10 @@ def main():
         print(f"Re-upserting the last {HEAL_SESSIONS} trading sessions: from {heal_start}")
 
         with pipeline_run(conn, "daily_update") as run:
+            fetch_config.check_version()
+            settings_daily = fetch_config.register(conn, "1d")
+            settings_hourly = fetch_config.register(conn, "1h")
+            record_settings(conn, run["run_id"], settings_daily)
             earliest_start = _now().date()
             totals = dict(inserted=0, updated=0, unchanged=0, held_back=0, rejected=0)
             for t in tickers:
@@ -47,13 +55,17 @@ def main():
                 try:
                     f = fetch_rows_ex(t, start)
                     if not f.daily and not f.fallback and not f.held_back:
+                        ledger.record_fetch(conn, f, None, run["run_id"], "daily_update", settings_daily, settings_hourly)
                         run["tickers_failed"].append(t)
                         print(f"{t}: FAILED (Yahoo returned no bars from {start})")
                         continue
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
+                    observations.record_fetched(conn, f, checked.result, fetch_ids)
                     totals["rejected"] += len(checked.result.rejected)
-                    s = upsert_rows(conn, checked.daily)
-                    g = upsert_rows(conn, checked.fallback, insert_only=True)    # approximate rows only fill gaps
+                    s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)    # approximate rows only fill gaps
+                    quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
@@ -68,6 +80,8 @@ def main():
                     print(f"{t}: inserted {inserted}, updated {updated}, unchanged {unchanged}{held}{fb}{bad} from {start}{note}")
                 except Exception as exc:
                     conn.rollback()
+                    if isinstance(exc, FetchError):
+                        ledger.record_error(conn, exc.record, run["run_id"], "daily_update", settings_daily)
                     run["tickers_failed"].append(t)
                     print(f"{t}: FAILED ({exc})")
 
@@ -77,7 +91,10 @@ def main():
             summary = (f"prices: {totals['inserted']} inserted, {totals['updated']} updated, "
                        f"{totals['unchanged']} unchanged, {totals['held_back']} held back (session not final), "
                        f"{totals['rejected']} rejected by validation")
-            run["message"] = f"{summary}; {n_sig} signal rows refreshed; latest price date {max_date}"
+            lineage = {"ledger": ledger.FAILURES[0], "observations": observations.FAILURES[0], "quality": quality.FAILURES[0]}
+            lost = ", ".join(f"{k} {v}" for k, v in lineage.items() if v)
+            run["message"] = (f"{summary}; {n_sig} signal rows refreshed; latest price date {max_date}"
+                              + (f"; lineage write failures: {lost}" if lost else ""))
             print(summary)
             print(run["message"])
 
