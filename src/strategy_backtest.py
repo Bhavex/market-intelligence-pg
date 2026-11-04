@@ -415,6 +415,11 @@ def main():
     ap.add_argument("--cost-bp", type=float, default=REALISTIC_BP)
     ap.add_argument("--lag", type=int, default=1)
     ap.add_argument("--seeds", type=int, default=20)
+    ap.add_argument("--rigour", action="store_true", help="cost levels, turnover, bootstrap, holdout split, trial registry")
+    ap.add_argument("--holdout-years", type=float, default=3.0)
+    ap.add_argument("--bootstrap-draws", type=int, default=2000)
+    ap.add_argument("--block", type=int, default=21)
+    ap.add_argument("--registry", choices=["auto", "db", "csv", "none"], default="auto")
     args = ap.parse_args()
     cfg = BacktestConfig(cost_bp=args.cost_bp, lag_days=args.lag)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -461,11 +466,31 @@ def main():
                 args.img / f"backtest_{tag}.png", note=note)
     print(table[["final_value_of_100", "cagr", "volatility", "sharpe", "max_drawdown", "hit_rate_vs_benchmark",
                  "turnover_per_year", "cagr_before_costs"]].round(4).to_string())
+    if args.rigour:
+        run_rigour(args, px, sectors, cfg, tag, timeline, membership)
     if tag == "synthetic" and args.seeds:
         study = seed_study(range(1, args.seeds + 1), cfg)
         study.to_csv(args.out / "synthetic_seed_study.csv", index=False)
         plot_seed_study(study, args.img / "backtest_synthetic_seeds.png")
         print(study.groupby(["world", "strategy"])[["excess_cagr_vs_benchmark", "hit_rate"]].agg(["mean", "std"]).round(4))
+
+
+def run_rigour(args, px, sectors, cfg, tag, timeline, membership):
+    import os
+    import backtest_rigour as R
+    conn = None
+    if tag == "database" and args.registry in ("auto", "db"):
+        import psycopg
+        conn = psycopg.connect(os.environ["DATABASE_URL"])
+    try:
+        registry = R.registry_for(args.registry, args.out, conn)
+        out = R.run(px, sectors, cfg, args.out, registry, tag, args.holdout_years, args.bootstrap_draws, args.block,
+                    timeline=timeline, membership=membership)
+    finally:
+        if conn is not None:
+            conn.close()
+    print(out["markdown"])
+    return out
 
 
 if __name__ == "__main__":

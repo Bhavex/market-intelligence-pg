@@ -1,0 +1,87 @@
+{
+  "source": "synthetic",
+  "holdout_start": "2023-10-30",
+  "holdout_years": 3.0,
+  "bootstrap": {
+    "block": 21,
+    "draws": 2000,
+    "seed": 0,
+    "level": 0.95,
+    "observations": 2543
+  },
+  "cost_levels_bp": {
+    "zero": 0.0,
+    "realistic": 11.2,
+    "high": 41.2
+  },
+  "deflated_sharpe": {
+    "momentum": {
+      "sharpe_annual": 0.08573885504966092,
+      "trials": 12,
+      "trial_sharpe_sd_annual": 0.18035446575609615,
+      "expected_max_sharpe_annual": 0.30025616846288455,
+      "skew": 0.10612327273476098,
+      "kurtosis": 2.875505282665133,
+      "observations": 1695,
+      "deflated_sharpe_probability": 0.28898921353108326
+    },
+    "sector_strength": {
+      "sharpe_annual": 0.37558112924565523,
+      "trials": 7,
+      "trial_sharpe_sd_annual": 0.14873764310796925,
+      "expected_max_sharpe_annual": 0.20626556490414136,
+      "skew": 0.09895462693454221,
+      "kurtosis": 2.9818353034184053,
+      "observations": 1758,
+      "deflated_sharpe_probability": 0.6727571183084171
+    }
+  },
+  "selected": {
+    "momentum": {
+      "params": {
+        "momentum_lookback": 20,
+        "momentum_top_n": 8
+      },
+      "holdout": {
+        "start": "2023-10-30",
+        "end": "2026-10-30",
+        "final_value_of_100": 179.59935572983053,
+        "total_return": 0.7959935572983055,
+        "cagr": 0.20680386361615444,
+        "volatility": 0.16795954742241917,
+        "sharpe": 1.2034020832221757,
+        "max_drawdown": -0.2198585927453206,
+        "positive_months": 0.6216216216216216,
+        "hit_rate_vs_benchmark": 0.5945945945945946,
+        "excess_cagr_vs_benchmark": 0.06675161704186339,
+        "turnover_per_year": 14.600495076490466,
+        "sharpe_per_period": 0.07580720570054598
+      }
+    },
+    "sector_strength": {
+      "params": {
+        "sector_lookback": 60,
+        "sector_top_k": 1
+      },
+      "holdout": {
+        "start": "2023-10-30",
+        "end": "2026-10-30",
+        "final_value_of_100": 114.27025211422253,
+        "total_return": 0.14270252114222526,
+        "cagr": 0.043752814483076774,
+        "volatility": 0.19459341494239052,
+        "sharpe": 0.3173402201060868,
+        "max_drawdown": -0.16391520875171062,
+        "positive_months": 0.5945945945945946,
+        "hit_rate_vs_benchmark": 0.43243243243243246,
+        "excess_cagr_vs_benchmark": -0.09629943209121428,
+        "turnover_per_year": 14.918304356390118,
+        "sharpe_per_period": 0.019990554842838213
+      }
+    }
+  },
+  "trials_this_run": 51,
+  "trials_in_registry": 51,
+  "registry": "csv",
+  "data_fingerprint": "7541234867aa52b29524a9bb7791c50c00aa8686aa0661c379834b0a7cf829a4"
+}
