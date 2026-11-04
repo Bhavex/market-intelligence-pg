@@ -27,6 +27,7 @@ Let *D* = the attributes of the whole dataset in one flat table (what a naïve C
 | FD1 | `ticker → company_name, sector_name, city_name, state` | a listed symbol has one name, one sector, one HQ |
 | FD2 | `sector_name → nifty_index` | each sector maps to one NIFTY index |
 | FD3 | `(city_name, state) → region, latitude, longitude` | a city's location is fixed |
+| FD3b | `state → region` | every Indian state belongs to one region (stored once in `states`) |
 | FD4 | `(ticker, price_date) → open, high, low, close, adj_close, volume` | one bar per stock per day |
 | FD5 | `(ticker, price_date) → momentum_20d, rsi_14, sma_50, …` | signals are computed per stock per day |
 | FD6 | `(ticker, snapshot_date) → market_cap, pe_ratio, …` | one snapshot per stock per date |
@@ -45,7 +46,7 @@ Let *D* = the attributes of the whole dataset in one flat table (what a naïve C
 `company` violates this: `ticker → sector_name → nifty_index` (FD2) and `ticker → (city_name, state) → latitude, longitude` (FD3).
 → Decompose: `sectors(sector_id, sector_name, nifty_index)`, `cities(city_id, city_name, state, region, latitude, longitude)`, `companies(ticker, company_name, sector_id, hq_city_id)`.
 
-**BCNF** — for every non-trivial FD X → Y, X is a superkey. In the final schema every determinant is a key of its own table (`sector_id`, `sector_name`, `city_id`, `(city_name,state)`, `ticker`, `(ticker, price_date)`, `(ticker, snapshot_date)`), so all tables are in **BCNF**.
+**BCNF** — for every non-trivial FD X → Y, X is a superkey. In the final schema every determinant is a key of its own table (`sector_id`, `sector_name`, `city_id`, `(city_name,state)`, `ticker`, `(ticker, price_date)`, `(ticker, snapshot_date)`), so all tables are in **BCNF**, with one exception found in the Nov 2026 review: inside `cities`, `state → region` holds and `state` is not a key, a transitive dependency. `sql/12_integrity_and_reporting.sql` adds `states(state, region)` and a composite FK `cities(state, region) → states(state, region)`, so the redundant column can no longer contradict its state. See [MIGRATION_NOTES.md](MIGRATION_NOTES.md).
 
 **Lossless & dependency-preserving:** each decomposition splits on a key of one side (e.g. `ticker` is the key of `companies`), so natural joins rebuild *D* exactly; FD1–FD6 are each enforced inside a single table.
 
