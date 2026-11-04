@@ -64,6 +64,10 @@ ratios are rounded to 6 decimals on write.
 checked from then on. `VALIDATE CONSTRAINT` then scans the old rows under a light lock (SHARE UPDATE EXCLUSIVE). If an old
 row fails, the exception is caught and the constraint simply stays `NOT VALID` (`sql/12_integrity_and_reporting.sql`).
 Tested: a deliberately bad row left setup working, and the constraint validated itself once the row was fixed.
+That does not make the migration risk-free:
+- `ADD CONSTRAINT` still needs a brief `ACCESS EXCLUSIVE` lock and waits behind long readers;
+- only check and FK violations are caught, so any other error fails `setup_db.py`;
+- a new or updated row that breaks a constraint still fails its statement.
 
 **10. What is a deferrable constraint and why did you use one?**
 `cities_state_region_fk` is `DEFERRABLE INITIALLY DEFERRED`, so it is checked at COMMIT, not per statement. `setup_db.py`
@@ -122,7 +126,8 @@ GitHub Actions at 17:10, 20:10 and 07:10 IST runs these steps:
 Every job logs to `pipeline_runs`.
 
 **19. What does "idempotent" mean here and how do you guarantee it?**
-Running the same load twice leaves the database identical. The guarantee is
+Running the same load twice leaves every price row unchanged; only run logs and `signals.computed_at` change. The
+mechanism is
 `INSERT … ON CONFLICT (ticker, price_date) DO UPDATE … WHERE (old values) IS DISTINCT FROM (new values)`. A re-run
 updates nothing, writes nothing to the audit log and creates no new versions. The schema files use
 `IF NOT EXISTS` / `CREATE OR REPLACE`, and CI applies them twice on every push to prove it.
@@ -131,7 +136,10 @@ updates nothing, writes nothing to the audit log and creates no new versions. Th
 The data never leaves the database: one set-based statement with window functions (`LAG`, `AVG … ROWS BETWEEN`,
 `STDDEV_SAMP`) handles every stock at once and upserts the result. The logic lives in one place and every client (Power BI,
 site, Excel) sees the same numbers. It also demonstrates PL/pgSQL. The Python replica in `fragility.py` is used only to
-verify it; in CI it matches 100% on trend, anomaly, breakout, RSI and momentum.
+verify it. In CI the two agree on all 640 synthetic test rows for trend, anomaly, breakout, RSI and momentum. That
+shows the two implementations are consistent, not that the definitions are right. Both were written from the same
+specification, so a shared misunderstanding would agree too. The hand-computed examples in `tests/test_signals.py`
+are the check on the formulas themselves.
 
 **21. Why does the 52-week high exclude today?**
 The window is `ROWS BETWEEN 252 PRECEDING AND 1 PRECEDING`. If today were in the window, today could never exceed its
@@ -156,7 +164,9 @@ than half fail, the job exits non-zero and the Action turns red. `pipeline_run()
   isolated spikes (a move beyond ±20% that reverses the next session).
 - **Warning only:** persistent jumps, open/close outside the day's range, and gaps of 3+ NSE sessions.
 
-Rejected rows are logged and saved in `rejected_prices` with the raw row as JSONB. They never crash the run.
+Rejected rows are logged and saved in `rejected_prices` with the raw row as JSONB, instead of aborting the load.
+Network or database errors still fail the ticker or the run. The spike rule used the *next* session's price, which
+makes it future-dependent; it is replaced by timestamped quality states (see `docs/DATA_LINEAGE.md`).
 
 **25. Why reject a spike but keep a jump of the same size?**
 A one-day move that immediately reverses is the signature of a bad tick. A move that persists may be real news, like
@@ -165,10 +175,12 @@ dividends do not look like jumps. It compares with the last *accepted* price, so
 rejecting every later day.
 
 **26. What if Yahoo changes a price after you stored it?**
-The next run's 5-session window overwrites it, and the weekly `revision_scan.py` re-checks full history. Every change is
+The next run's 5-session window overwrites it with Yahoo's latest value (only inside that window), and the weekly
+`revision_scan.py` re-checks the full history. Neither can correct an error Yahoo keeps reporting. Every change is
 kept in the bitemporal `price_versions` table (`sys_from`/`sys_to`, with the `run_id` that caused it) and classified in
 `v_price_revisions` (dividend adjustment, intraday-as-close, hourly fill replaced, …).
-`prices_as_of('2026-10-13 10:00+05:30')` returns the table as it was known at that moment.
+`prices_as_of('2026-10-13 10:00+05:30')` returns the table as it was known at that moment, for any moment since
+versioning began in Oct 2026. Earlier history is a one-time reconstruction from the audit log, not an observation.
 
 **27. How do you know the pipeline didn't silently miss a day?**
 `v_data_freshness` compares each stock's latest date with `expected_latest_trading_day()`, which reads the NSE holiday

@@ -9,7 +9,7 @@ with no change to any workflow file.
 | Rule | Why |
 |---|---|
 | `CREATE … IF NOT EXISTS`, `CREATE OR REPLACE VIEW`, `ON CONFLICT DO NOTHING` | `setup_db.py` re-runs every file before every load, so each statement must be a no-op the second time |
-| Constraints are added `NOT VALID`, then `VALIDATE CONSTRAINT` is tried in its own exception block | `NOT VALID` is instant (no scan) and never fails on old rows. Validation runs once; if an old row breaks the rule, the constraint stays `NOT VALID` with a `NOTICE`, and new and updated rows are **still checked**. It validates itself on a later run once the data is clean (tested locally) |
+| Constraints are added `NOT VALID`, then `VALIDATE CONSTRAINT` is tried in its own exception block | `NOT VALID` skips the scan of old rows, so old violating rows cannot block adding the constraint. Validation runs once; if an old row breaks the rule, the constraint stays `NOT VALID` with a `NOTICE`, and new and updated rows are **still checked**. It validates itself on a later run once the data is clean (tested locally). This lowers the risk; it does not remove it. `ADD CONSTRAINT` still takes a brief `ACCESS EXCLUSIVE` lock, only check and FK violations are caught, and a new row that violates a constraint still fails its statement |
 | Only new views; no existing view is changed | `v_sector_daily`, `v_company_daily` and `mv_sector_daily` are what Power BI and the site read today. Changing their columns would break them, and dropping them would lose grants |
 | `GRANT SELECT … TO readonly_access` | Power BI connects through the read-only role |
 

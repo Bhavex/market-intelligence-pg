@@ -13,176 +13,1048 @@
   "results": {
     "indexed": {
       "company_history_1y": {
-        "exec_ms": 1.69,
-        "plan_ms": 0.653,
+        "exec_ms": 2.997,
+        "plan_ms": 1.098,
         "buffers": 2003,
         "rows": 249,
-        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Index scan (signals_pkey) \u2026"
+        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Index scan (signals_pkey) \u2026",
+        "exec_ms_runs": [
+          1.788,
+          3.029,
+          2.994,
+          3.009,
+          3.137,
+          2.82,
+          2.961,
+          3.015,
+          2.997
+        ],
+        "plan_ms_runs": [
+          0.769,
+          1.1,
+          1.077,
+          1.091,
+          1.139,
+          1.24,
+          1.098,
+          1.235,
+          1.093
+        ],
+        "buffers_runs": [
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003
+        ]
       },
       "api_prices_page": {
-        "exec_ms": 0.064,
-        "plan_ms": 0.054,
+        "exec_ms": 0.095,
+        "plan_ms": 0.059,
         "buffers": 7,
         "rows": 100,
-        "plan": "Index scan (daily_prices_pkey)"
+        "plan": "Index scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.105,
+          0.096,
+          0.096,
+          0.083,
+          0.091,
+          0.08,
+          0.095,
+          0.095,
+          0.098
+        ],
+        "plan_ms_runs": [
+          0.093,
+          0.085,
+          0.071,
+          0.059,
+          0.059,
+          0.066,
+          0.054,
+          0.053,
+          0.054
+        ],
+        "buffers_runs": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7
+        ]
       },
       "api_prices_count": {
-        "exec_ms": 0.064,
-        "plan_ms": 0.048,
+        "exec_ms": 0.111,
+        "plan_ms": 0.071,
         "buffers": 5,
         "rows": 1,
-        "plan": "Index-only scan (daily_prices_pkey)"
+        "plan": "Index-only scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.123,
+          0.114,
+          0.147,
+          0.107,
+          0.097,
+          0.11,
+          0.103,
+          0.111,
+          0.147
+        ],
+        "plan_ms_runs": [
+          0.132,
+          0.111,
+          0.071,
+          0.068,
+          0.071,
+          0.071,
+          0.077,
+          0.07,
+          0.07
+        ],
+        "buffers_runs": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ]
       },
       "all_stocks_one_day": {
-        "exec_ms": 0.035,
-        "plan_ms": 0.024,
+        "exec_ms": 0.062,
+        "plan_ms": 0.037,
         "buffers": 27,
         "rows": 25,
-        "plan": "Bitmap heap scan (daily_prices), Bitmap Index scan (idx_daily_prices_date)"
+        "plan": "Bitmap heap scan (daily_prices), Bitmap Index scan (idx_daily_prices_date)",
+        "exec_ms_runs": [
+          0.073,
+          0.062,
+          0.062,
+          0.064,
+          0.065,
+          0.059,
+          0.054,
+          0.045,
+          0.037
+        ],
+        "plan_ms_runs": [
+          0.039,
+          0.035,
+          0.035,
+          0.035,
+          0.037,
+          0.044,
+          0.26,
+          0.073,
+          0.03
+        ],
+        "buffers_runs": [
+          27,
+          27,
+          27,
+          27,
+          27,
+          27,
+          27,
+          27,
+          27
+        ]
       },
       "latest_prices_by_sector": {
-        "exec_ms": 0.926,
-        "plan_ms": 0.598,
+        "exec_ms": 1.017,
+        "plan_ms": 0.637,
         "buffers": 305,
         "rows": 25,
-        "plan": "Subquery Scan (), Index-only scan (idx_daily_prices_date), Seq scan (companies) \u2026"
+        "plan": "Subquery Scan (), Index-only scan (idx_daily_prices_date), Seq scan (companies) \u2026",
+        "exec_ms_runs": [
+          1.045,
+          0.969,
+          0.922,
+          0.92,
+          1.139,
+          0.997,
+          1.391,
+          1.155,
+          1.017
+        ],
+        "plan_ms_runs": [
+          0.744,
+          0.579,
+          0.585,
+          0.662,
+          0.531,
+          0.637,
+          0.774,
+          0.649,
+          0.587
+        ],
+        "buffers_runs": [
+          305,
+          305,
+          305,
+          305,
+          305,
+          305,
+          305,
+          305,
+          305
+        ]
       },
       "anomalies_180d": {
-        "exec_ms": 0.145,
-        "plan_ms": 0.065,
+        "exec_ms": 0.114,
+        "plan_ms": 0.055,
         "buffers": 53,
         "rows": 81,
-        "plan": "Bitmap heap scan (signals), Bitmap Index scan (idx_signals_anomaly)"
+        "plan": "Bitmap heap scan (signals), Bitmap Index scan (idx_signals_anomaly)",
+        "exec_ms_runs": [
+          0.125,
+          0.112,
+          0.102,
+          0.116,
+          0.174,
+          0.114,
+          0.094,
+          0.094,
+          0.126
+        ],
+        "plan_ms_runs": [
+          0.066,
+          0.077,
+          0.049,
+          0.055,
+          0.065,
+          0.048,
+          0.047,
+          0.062,
+          0.045
+        ],
+        "buffers_runs": [
+          53,
+          53,
+          53,
+          53,
+          53,
+          53,
+          53,
+          53,
+          53
+        ]
       },
       "sector_daily_1y_view": {
-        "exec_ms": 95.49,
-        "plan_ms": 1.187,
+        "exec_ms": 84.58,
+        "plan_ms": 1.086,
         "buffers": 4154,
         "rows": 1245,
-        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026"
+        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026",
+        "exec_ms_runs": [
+          87.573,
+          84.58,
+          93.077,
+          82.822,
+          99.199,
+          86.321,
+          79.832,
+          79.78,
+          80.754
+        ],
+        "plan_ms_runs": [
+          1.086,
+          1.127,
+          1.084,
+          1.106,
+          1.057,
+          2.129,
+          1.052,
+          1.078,
+          1.155
+        ],
+        "buffers_runs": [
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154
+        ]
       },
       "sector_daily_1y_matview": {
-        "exec_ms": 0.215,
-        "plan_ms": 0.033,
+        "exec_ms": 0.205,
+        "plan_ms": 0.037,
         "buffers": 26,
         "rows": 1245,
-        "plan": "Bitmap heap scan (mv_sector_daily), Bitmap Index scan (ux_mv_sector_daily)"
+        "plan": "Bitmap heap scan (mv_sector_daily), Bitmap Index scan (ux_mv_sector_daily)",
+        "exec_ms_runs": [
+          0.23,
+          0.21,
+          0.202,
+          0.201,
+          0.231,
+          0.192,
+          0.185,
+          0.403,
+          0.205
+        ],
+        "plan_ms_runs": [
+          0.06,
+          0.041,
+          0.033,
+          0.069,
+          0.029,
+          0.027,
+          0.026,
+          0.04,
+          0.037
+        ],
+        "buffers_runs": [
+          26,
+          26,
+          26,
+          26,
+          26,
+          26,
+          26,
+          26,
+          26
+        ]
       },
       "sector_strength_latest": {
-        "exec_ms": 0.244,
-        "plan_ms": 0.675,
+        "exec_ms": 0.25,
+        "plan_ms": 0.588,
         "buffers": 57,
         "rows": 5,
-        "plan": "Subquery Scan (), Index scan (idx_signals_date), Bitmap heap scan (daily_prices) \u2026"
+        "plan": "Subquery Scan (), Index scan (idx_signals_date), Bitmap heap scan (daily_prices) \u2026",
+        "exec_ms_runs": [
+          0.292,
+          0.323,
+          0.25,
+          0.247,
+          0.252,
+          0.241,
+          0.243,
+          0.293,
+          0.241
+        ],
+        "plan_ms_runs": [
+          0.724,
+          0.613,
+          0.588,
+          0.586,
+          0.592,
+          0.572,
+          0.625,
+          0.52,
+          0.564
+        ],
+        "buffers_runs": [
+          57,
+          57,
+          57,
+          57,
+          57,
+          57,
+          57,
+          57,
+          57
+        ]
       },
       "freshness": {
-        "exec_ms": 0.632,
-        "plan_ms": 0.088,
+        "exec_ms": 0.635,
+        "plan_ms": 0.11,
         "buffers": 127,
         "rows": 25,
-        "plan": "Seq scan (companies), Index-only scan (daily_prices_pkey)"
+        "plan": "Seq scan (companies), Index-only scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.783,
+          0.759,
+          0.665,
+          0.714,
+          0.599,
+          0.635,
+          0.624,
+          0.573,
+          0.579
+        ],
+        "plan_ms_runs": [
+          0.139,
+          0.13,
+          0.128,
+          0.11,
+          0.158,
+          0.098,
+          0.093,
+          0.091,
+          0.089
+        ],
+        "buffers_runs": [
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127
+        ]
+      },
+      "freshness_old_groupby": {
+        "exec_ms": 31.22,
+        "plan_ms": 0.183,
+        "buffers": 970,
+        "rows": 25,
+        "plan": "Seq scan (daily_prices), Seq scan (companies)",
+        "exec_ms_runs": [
+          31.215,
+          32.561,
+          35.273,
+          31.855,
+          29.711,
+          30.876,
+          29.764,
+          31.22,
+          33.224
+        ],
+        "plan_ms_runs": [
+          0.229,
+          0.175,
+          0.17,
+          0.174,
+          0.23,
+          0.182,
+          0.187,
+          0.183,
+          0.196
+        ],
+        "buffers_runs": [
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970
+        ]
       }
     },
     "no_secondary_indexes": {
       "company_history_1y": {
-        "exec_ms": 1.709,
-        "plan_ms": 0.538,
+        "exec_ms": 1.723,
+        "plan_ms": 0.598,
         "buffers": 2003,
         "rows": 249,
-        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Index scan (signals_pkey) \u2026"
+        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Index scan (signals_pkey) \u2026",
+        "exec_ms_runs": [
+          1.842,
+          1.697,
+          1.668,
+          1.701,
+          1.828,
+          1.723,
+          1.697,
+          2.184,
+          1.937
+        ],
+        "plan_ms_runs": [
+          0.586,
+          0.598,
+          0.608,
+          0.687,
+          0.575,
+          0.649,
+          0.629,
+          0.552,
+          0.54
+        ],
+        "buffers_runs": [
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003,
+          2003
+        ]
       },
       "api_prices_page": {
-        "exec_ms": 0.059,
-        "plan_ms": 0.04,
+        "exec_ms": 0.054,
+        "plan_ms": 0.035,
         "buffers": 7,
         "rows": 100,
-        "plan": "Index scan (daily_prices_pkey)"
+        "plan": "Index scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.058,
+          0.054,
+          0.052,
+          0.06,
+          0.054,
+          0.053,
+          0.052,
+          0.05,
+          0.069
+        ],
+        "plan_ms_runs": [
+          0.054,
+          0.04,
+          0.035,
+          0.035,
+          0.048,
+          0.036,
+          0.033,
+          0.03,
+          0.034
+        ],
+        "buffers_runs": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7
+        ]
       },
       "api_prices_count": {
-        "exec_ms": 0.07,
-        "plan_ms": 0.036,
+        "exec_ms": 0.066,
+        "plan_ms": 0.034,
         "buffers": 5,
         "rows": 1,
-        "plan": "Index-only scan (daily_prices_pkey)"
+        "plan": "Index-only scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.068,
+          0.065,
+          0.065,
+          0.071,
+          0.067,
+          0.066,
+          0.064,
+          0.064,
+          0.09
+        ],
+        "plan_ms_runs": [
+          0.037,
+          0.034,
+          0.034,
+          0.033,
+          0.037,
+          0.035,
+          0.032,
+          0.033,
+          0.032
+        ],
+        "buffers_runs": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ]
       },
       "all_stocks_one_day": {
-        "exec_ms": 2.416,
-        "plan_ms": 0.058,
+        "exec_ms": 1.858,
+        "plan_ms": 0.036,
         "buffers": 302,
         "rows": 25,
-        "plan": "Index scan (daily_prices_pkey)"
+        "plan": "Index scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          2.124,
+          2.248,
+          2.198,
+          2.697,
+          1.858,
+          1.835,
+          1.737,
+          1.817,
+          1.743
+        ],
+        "plan_ms_runs": [
+          0.047,
+          0.066,
+          0.057,
+          0.051,
+          0.036,
+          0.031,
+          0.028,
+          0.027,
+          0.026
+        ],
+        "buffers_runs": [
+          302,
+          302,
+          302,
+          302,
+          302,
+          302,
+          302,
+          302,
+          302
+        ]
       },
       "latest_prices_by_sector": {
-        "exec_ms": 11.682,
-        "plan_ms": 0.632,
+        "exec_ms": 12.352,
+        "plan_ms": 0.571,
         "buffers": 1221,
         "rows": 25,
-        "plan": "Subquery Scan (), Seq scan (daily_prices), Seq scan (companies) \u2026"
+        "plan": "Subquery Scan (), Seq scan (daily_prices), Seq scan (companies) \u2026",
+        "exec_ms_runs": [
+          11.295,
+          11.726,
+          11.999,
+          12.62,
+          12.621,
+          11.137,
+          17.291,
+          20.658,
+          12.352
+        ],
+        "plan_ms_runs": [
+          0.545,
+          0.528,
+          0.553,
+          0.515,
+          0.637,
+          0.571,
+          0.634,
+          0.939,
+          0.725
+        ],
+        "buffers_runs": [
+          1221,
+          1221,
+          1221,
+          1221,
+          1221,
+          1221,
+          1221,
+          1221,
+          1221
+        ]
       },
       "anomalies_180d": {
-        "exec_ms": 9.962,
-        "plan_ms": 0.072,
+        "exec_ms": 9.583,
+        "plan_ms": 0.079,
         "buffers": 2025,
         "rows": 81,
-        "plan": "Seq scan (signals)"
+        "plan": "Seq scan (signals)",
+        "exec_ms_runs": [
+          9.531,
+          9.511,
+          9.583,
+          9.792,
+          9.466,
+          9.521,
+          10.968,
+          9.906,
+          9.897
+        ],
+        "plan_ms_runs": [
+          0.078,
+          0.079,
+          0.077,
+          0.075,
+          0.115,
+          0.079,
+          0.082,
+          0.083,
+          0.115
+        ],
+        "buffers_runs": [
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025
+        ]
       },
       "sector_daily_1y_view": {
-        "exec_ms": 93.782,
-        "plan_ms": 1.056,
+        "exec_ms": 91.666,
+        "plan_ms": 0.97,
         "buffers": 4154,
         "rows": 1245,
-        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026"
+        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026",
+        "exec_ms_runs": [
+          129.224,
+          109.796,
+          83.303,
+          82.643,
+          83.891,
+          85.002,
+          91.666,
+          92.03,
+          125.791
+        ],
+        "plan_ms_runs": [
+          0.97,
+          1.812,
+          0.968,
+          0.973,
+          0.947,
+          0.969,
+          0.981,
+          0.951,
+          1.467
+        ],
+        "buffers_runs": [
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154,
+          4154
+        ]
       },
       "sector_daily_1y_matview": {
-        "exec_ms": 0.989,
+        "exec_ms": 1.011,
         "plan_ms": 0.05,
         "buffers": 197,
         "rows": 1245,
-        "plan": "Seq scan (mv_sector_daily)"
+        "plan": "Seq scan (mv_sector_daily)",
+        "exec_ms_runs": [
+          1.065,
+          1.006,
+          0.963,
+          0.972,
+          1.765,
+          1.167,
+          1.03,
+          1.011,
+          0.841
+        ],
+        "plan_ms_runs": [
+          0.054,
+          0.048,
+          0.042,
+          0.037,
+          0.063,
+          0.059,
+          0.05,
+          0.04,
+          0.055
+        ],
+        "buffers_runs": [
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197
+        ]
       },
       "sector_strength_latest": {
-        "exec_ms": 0.394,
-        "plan_ms": 0.621,
+        "exec_ms": 0.387,
+        "plan_ms": 0.619,
         "buffers": 179,
         "rows": 5,
-        "plan": "Subquery Scan (), Seq scan (companies), Index-only scan (daily_prices_pkey) \u2026"
+        "plan": "Subquery Scan (), Seq scan (companies), Index-only scan (daily_prices_pkey) \u2026",
+        "exec_ms_runs": [
+          0.457,
+          0.387,
+          0.384,
+          0.427,
+          0.353,
+          0.411,
+          0.361,
+          0.554,
+          0.358
+        ],
+        "plan_ms_runs": [
+          0.687,
+          0.619,
+          0.62,
+          0.541,
+          0.62,
+          0.558,
+          0.604,
+          0.93,
+          0.609
+        ],
+        "buffers_runs": [
+          179,
+          179,
+          179,
+          179,
+          179,
+          179,
+          179,
+          179,
+          179
+        ]
       },
       "freshness": {
-        "exec_ms": 0.813,
-        "plan_ms": 0.135,
+        "exec_ms": 0.702,
+        "plan_ms": 0.114,
         "buffers": 127,
         "rows": 25,
-        "plan": "Seq scan (companies), Index-only scan (daily_prices_pkey)"
+        "plan": "Seq scan (companies), Index-only scan (daily_prices_pkey)",
+        "exec_ms_runs": [
+          0.677,
+          0.678,
+          0.576,
+          0.692,
+          0.702,
+          0.774,
+          0.902,
+          1.091,
+          1.029
+        ],
+        "plan_ms_runs": [
+          0.114,
+          0.092,
+          0.091,
+          0.098,
+          0.206,
+          0.112,
+          0.135,
+          0.15,
+          0.147
+        ],
+        "buffers_runs": [
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127,
+          127
+        ]
+      },
+      "freshness_old_groupby": {
+        "exec_ms": 31.71,
+        "plan_ms": 0.196,
+        "buffers": 970,
+        "rows": 25,
+        "plan": "Seq scan (daily_prices), Seq scan (companies)",
+        "exec_ms_runs": [
+          31.207,
+          34.044,
+          30.247,
+          32.174,
+          31.136,
+          50.955,
+          51.803,
+          31.71,
+          30.054
+        ],
+        "plan_ms_runs": [
+          0.221,
+          0.172,
+          0.219,
+          0.167,
+          0.179,
+          0.355,
+          0.264,
+          0.196,
+          0.173
+        ],
+        "buffers_runs": [
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970
+        ]
       }
     },
     "no_indexes_at_all": {
       "company_history_1y": {
-        "exec_ms": 25.801,
-        "plan_ms": 0.675,
+        "exec_ms": 21.083,
+        "plan_ms": 0.578,
         "buffers": 4972,
         "rows": 249,
-        "plan": "Seq scan (cities), Seq scan (companies), Seq scan (sectors) \u2026"
+        "plan": "Seq scan (cities), Seq scan (companies), Seq scan (sectors) \u2026",
+        "exec_ms_runs": [
+          21.083,
+          25.886,
+          19.75,
+          21.109,
+          31.667,
+          20.408,
+          21.209,
+          19.866,
+          19.884
+        ],
+        "plan_ms_runs": [
+          0.884,
+          0.616,
+          0.576,
+          0.697,
+          0.544,
+          0.846,
+          0.578,
+          0.532,
+          0.534
+        ],
+        "buffers_runs": [
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972
+        ]
       },
       "api_prices_page": {
-        "exec_ms": 6.174,
-        "plan_ms": 0.08,
+        "exec_ms": 6.175,
+        "plan_ms": 0.072,
         "buffers": 919,
         "rows": 100,
-        "plan": "Seq scan (daily_prices)"
+        "plan": "Seq scan (daily_prices)",
+        "exec_ms_runs": [
+          6.175,
+          6.288,
+          6.323,
+          5.978,
+          6.06,
+          6.382,
+          6.257,
+          6.137,
+          6.121
+        ],
+        "plan_ms_runs": [
+          0.072,
+          0.07,
+          0.112,
+          0.068,
+          0.069,
+          0.074,
+          0.072,
+          0.073,
+          0.076
+        ],
+        "buffers_runs": [
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919
+        ]
       },
       "api_prices_count": {
-        "exec_ms": 4.826,
-        "plan_ms": 0.067,
+        "exec_ms": 4.715,
+        "plan_ms": 0.072,
         "buffers": 919,
         "rows": 1,
-        "plan": "Seq scan (daily_prices)"
+        "plan": "Seq scan (daily_prices)",
+        "exec_ms_runs": [
+          4.633,
+          4.618,
+          4.671,
+          4.727,
+          4.715,
+          4.744,
+          4.767,
+          4.894,
+          4.556
+        ],
+        "plan_ms_runs": [
+          0.066,
+          0.063,
+          0.066,
+          0.068,
+          0.072,
+          0.072,
+          0.092,
+          0.076,
+          0.074
+        ],
+        "buffers_runs": [
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919
+        ]
       },
       "all_stocks_one_day": {
-        "exec_ms": 4.869,
-        "plan_ms": 0.049,
+        "exec_ms": 5.154,
+        "plan_ms": 0.055,
         "buffers": 919,
         "rows": 25,
-        "plan": "Seq scan (daily_prices)"
+        "plan": "Seq scan (daily_prices)",
+        "exec_ms_runs": [
+          5.574,
+          5.154,
+          4.64,
+          4.785,
+          4.586,
+          5.686,
+          6.058,
+          5.36,
+          4.904
+        ],
+        "plan_ms_runs": [
+          0.055,
+          0.057,
+          0.052,
+          0.05,
+          0.05,
+          0.051,
+          0.066,
+          0.091,
+          0.056
+        ],
+        "buffers_runs": [
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919,
+          919
+        ]
       },
       "latest_prices_by_sector": {
         "exec_ms": null,
@@ -190,42 +1062,250 @@
         "plan_ms": null,
         "buffers": null,
         "rows": null,
-        "plan": "Subquery Scan (), Seq scan (daily_prices), Index scan (sectors_sector_name_key) \u2026"
+        "plan": "Subquery Scan (), Seq scan (daily_prices), Index scan (sectors_sector_name_key) \u2026",
+        "exec_ms_runs": [],
+        "plan_ms_runs": [],
+        "buffers_runs": []
       },
       "anomalies_180d": {
-        "exec_ms": 9.477,
-        "plan_ms": 0.059,
+        "exec_ms": 9.934,
+        "plan_ms": 0.067,
         "buffers": 2025,
         "rows": 81,
-        "plan": "Seq scan (signals)"
+        "plan": "Seq scan (signals)",
+        "exec_ms_runs": [
+          9.633,
+          9.525,
+          10.0,
+          9.745,
+          10.22,
+          9.764,
+          9.934,
+          9.995,
+          10.03
+        ],
+        "plan_ms_runs": [
+          0.067,
+          0.064,
+          0.062,
+          0.063,
+          0.067,
+          0.083,
+          0.079,
+          0.12,
+          0.069
+        ],
+        "buffers_runs": [
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025,
+          2025
+        ]
       },
       "sector_daily_1y_view": {
-        "exec_ms": 93.031,
-        "plan_ms": 0.768,
+        "exec_ms": 103.924,
+        "plan_ms": 0.841,
         "buffers": 4972,
         "rows": 1245,
-        "plan": "Seq scan (daily_prices), Seq scan (companies), Seq scan (sectors) \u2026"
+        "plan": "Seq scan (daily_prices), Seq scan (companies), Seq scan (sectors) \u2026",
+        "exec_ms_runs": [
+          101.734,
+          103.843,
+          111.583,
+          116.669,
+          103.924,
+          92.09,
+          105.626,
+          97.833,
+          105.193
+        ],
+        "plan_ms_runs": [
+          0.841,
+          0.733,
+          1.39,
+          0.774,
+          1.194,
+          0.799,
+          0.796,
+          0.844,
+          0.868
+        ],
+        "buffers_runs": [
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972,
+          4972
+        ]
       },
       "sector_daily_1y_matview": {
-        "exec_ms": 0.963,
-        "plan_ms": 0.027,
+        "exec_ms": 0.998,
+        "plan_ms": 0.04,
         "buffers": 197,
         "rows": 1245,
-        "plan": "Seq scan (mv_sector_daily)"
+        "plan": "Seq scan (mv_sector_daily)",
+        "exec_ms_runs": [
+          1.019,
+          1.31,
+          0.998,
+          1.009,
+          0.959,
+          0.938,
+          0.999,
+          0.885,
+          0.862
+        ],
+        "plan_ms_runs": [
+          0.068,
+          0.046,
+          0.047,
+          0.04,
+          0.043,
+          0.036,
+          0.029,
+          0.038,
+          0.031
+        ],
+        "buffers_runs": [
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197,
+          197
+        ]
       },
       "sector_strength_latest": {
-        "exec_ms": 17.318,
-        "plan_ms": 0.779,
+        "exec_ms": 16.753,
+        "plan_ms": 0.791,
         "buffers": 4973,
         "rows": 5,
-        "plan": "Subquery Scan (), Index scan (sectors_sector_name_key), Seq scan (daily_prices) \u2026"
+        "plan": "Subquery Scan (), Index scan (sectors_sector_name_key), Seq scan (daily_prices) \u2026",
+        "exec_ms_runs": [
+          16.654,
+          16.669,
+          22.777,
+          17.225,
+          18.135,
+          17.103,
+          16.465,
+          16.342,
+          16.753
+        ],
+        "plan_ms_runs": [
+          0.791,
+          0.917,
+          0.797,
+          1.15,
+          0.779,
+          0.756,
+          1.041,
+          0.709,
+          0.773
+        ],
+        "buffers_runs": [
+          4973,
+          4973,
+          4973,
+          4973,
+          4973,
+          4973,
+          4973,
+          4973,
+          4973
+        ]
       },
       "freshness": {
-        "exec_ms": 137.991,
-        "plan_ms": 0.153,
+        "exec_ms": 143.886,
+        "plan_ms": 0.174,
         "buffers": 23026,
         "rows": 25,
-        "plan": "Seq scan (companies), Seq scan (daily_prices)"
+        "plan": "Seq scan (companies), Seq scan (daily_prices)",
+        "exec_ms_runs": [
+          146.574,
+          143.886,
+          147.71,
+          152.124,
+          170.364,
+          142.148,
+          139.792,
+          139.851,
+          138.993
+        ],
+        "plan_ms_runs": [
+          0.203,
+          0.166,
+          0.157,
+          0.16,
+          0.165,
+          0.216,
+          0.174,
+          0.191,
+          0.192
+        ],
+        "buffers_runs": [
+          23026,
+          23026,
+          23026,
+          23026,
+          23026,
+          23026,
+          23026,
+          23026,
+          23026
+        ]
+      },
+      "freshness_old_groupby": {
+        "exec_ms": 30.138,
+        "plan_ms": 0.164,
+        "buffers": 970,
+        "rows": 25,
+        "plan": "Seq scan (daily_prices), Seq scan (companies)",
+        "exec_ms_runs": [
+          30.193,
+          30.019,
+          29.927,
+          29.845,
+          30.138,
+          34.276,
+          30.087,
+          31.034,
+          30.347
+        ],
+        "plan_ms_runs": [
+          0.164,
+          0.207,
+          0.147,
+          0.205,
+          0.16,
+          0.288,
+          0.153,
+          0.165,
+          0.162
+        ],
+        "buffers_runs": [
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970,
+          970
+        ]
       }
     }
   }
