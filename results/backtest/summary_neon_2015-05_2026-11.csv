@@ -1,0 +1,5 @@
+key,strategy,start,end,final_value_of_100,cagr,cagr_before_costs,volatility,sharpe,max_drawdown,hit_rate_vs_benchmark,turnover_per_year
+momentum,Momentum top 5 (60d),2015-05-04,2026-11-04,281.8787,0.0962,0.1113,0.1816,0.5965,-0.3324,0.4892,12.1950
+sector_strength,Sector strength top 1 (20d),2015-05-04,2026-11-04,300.0313,0.1023,0.1270,0.2002,0.5861,-0.3008,0.5108,19.8294
+equal_weight_rebalanced,"Equal-weight, monthly rebalanced",2015-05-04,2026-11-04,436.5464,0.1395,0.1404,0.1443,0.9774,-0.3066,0.5612,0.6775
+benchmark,Equal-weight buy-and-hold,2015-05-04,2026-11-04,379.0192,0.1253,0.1254,0.1448,0.8882,-0.3077,,0.0886

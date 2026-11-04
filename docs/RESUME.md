@@ -34,10 +34,10 @@ Shorter, for a projects list:
   tests in CI on Python 3.12 and 3.13 against a PostgreSQL 17 container.
 
 **Optional fifth bullet (analytics roles):**
-- **Backtested the momentum and sector-strength signals** without look-ahead bias, with next-session execution and
-  11.2 bp NSE delivery costs. Over Feb 2015 – Oct 2026 the sector rotation ended at ₹359 against ₹350 for
-  buy-and-hold, but with a lower Sharpe ratio (0.62 vs 0.84) and a deeper drawdown (−31.6% vs −19.4%). I reported
-  that the signal does not beat the benchmark on a risk-adjusted basis.
+- **Backtested the momentum and sector-strength signals on 11.5 years of real production data** (Neon, May 2015 –
+  Nov 2026). The backtest had no look-ahead bias, next-session execution and 11.2 bp NSE delivery costs. Momentum
+  returned 9.6% a year and sector rotation 10.2%, against 12.5% for buy-and-hold (Sharpe 0.60 and 0.59 vs 0.89). I
+  reported that neither signal beats the benchmark.
 
 ## LinkedIn post draft
 
@@ -60,8 +60,9 @@ Shorter, for a projects list:
 > 🔹 **Let the database enforce the rules.** CHECK and FK constraints, audit triggers and a read-only role catch bad
 > data and mistakes that application code would miss.
 >
-> 🔹 **Be honest about results.** I backtested the sector-strength signal with realistic trading costs. It barely
-> matched buy-and-hold (₹359 vs ₹350 over 11 years) while taking much more risk (Sharpe 0.62 vs 0.84). Not the
+> 🔹 **Be honest about results.** I backtested the momentum and sector-strength signals on 11.5 years of real data,
+> with realistic trading costs. Both lost to simply holding all 25 stocks: 9.6% and 10.2% a year against 12.5%, with
+> Sharpe ratios of 0.60 and 0.59 against 0.89. Not the
 > exciting answer, but the true one.
 >
 > On top of the database there is a Streamlit dashboard, a read-only FastAPI service, a Docker Compose setup that runs
@@ -83,7 +84,7 @@ Shorter, for a projects list:
 | 414×, 0.05 ms vs 21.5 ms; 216 → 0.21 ms; 20.2 → 0.65 ms | `docs/PERFORMANCE.md`, `results/performance/production_scale_100_tickers*.json` (local PostgreSQL 16, synthetic data, 259,600 rows) |
 | 131–573× on production | `docs/BENCHMARKS.md` (Neon, PostgreSQL 17: primary key 131.5×, partial index 169×, materialized view 573×) |
 | 267 tests | `python -m pytest --collect-only -q` (218 run without a database) |
-| ₹359 vs ₹350, Sharpe 0.62 vs 0.84, drawdown −31.6% vs −19.4%, 11.2 bp | `docs/BACKTEST.md`, `results/backtest/published_rotation.json` |
+| 9.6% / 10.2% vs 12.5% CAGR, Sharpe 0.60 / 0.59 vs 0.89, 11.2 bp, May 2015 – Nov 2026 | **Real Neon data**: workflow run [41892962103](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41892962103), `results/backtest/summary_neon_2015-05_2026-11.csv`, `docs/BACKTEST.md` |
 
 The 414×, 216 ms and 31× figures come from synthetic data at production size on a local machine; the 131–573×
 figures come from the real production database. Say which is which if an interviewer asks.
