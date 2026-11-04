@@ -1,0 +1,42 @@
+name: Signal backtest (real data)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cost_bp:
+        description: "One-way trading cost in basis points"
+        default: "11.2"
+      lag:
+        description: "Sessions between the signal close and the trade"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      COST_BP: ${{ github.event.inputs.cost_bp || '11.2' }}
+      LAG: ${{ github.event.inputs.lag || '1' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Backtest on the database (read-only queries)
+        run: python src/strategy_backtest.py --source db --seeds 0 --cost-bp "$COST_BP" --lag "$LAG" --out backtest_output --img backtest_output
+      - name: Summary
+        run: |
+          echo '### Backtest summary (derived metrics only)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat backtest_output/summary_database.csv >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backtest-output
+          path: backtest_output/
