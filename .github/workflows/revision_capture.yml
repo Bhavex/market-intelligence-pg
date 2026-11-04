@@ -1,0 +1,40 @@
+name: Prospective revision capture
+
+on:
+  schedule:
+    - cron: "23 17 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      recent:
+        description: "Most recent trading sessions to re-fetch"
+        default: "10"
+      rotating_months:
+        description: "Older calendar months to re-fetch in this run (rotates through history)"
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RECENT: ${{ github.event.inputs.recent || '10' }}
+      ROTATING: ${{ github.event.inputs.rotating_months || '1' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Apply schema changes (safe, idempotent)
+        run: python src/setup_db.py
+      - name: Re-fetch and record differences (daily_prices is not modified)
+        run: python src/revision_capture.py --recent "$RECENT" --rotating-months "$ROTATING"
