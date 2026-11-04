@@ -9,6 +9,7 @@ import yfinance as yf
 
 import db
 import fetch_config
+import run_lease
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -242,6 +243,7 @@ def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool
     guard_final_sessions(rows, intraday)
     src = source or ("yahoo_hourly" if insert_only else "yahoo_daily")
     run_id = db.current_run_id()
+    run_lease.fence(conn)
     if run_id is not None:   # provenance for the versioning trigger; transaction-local, so it is
         conn.execute("SELECT set_config('app.run_id', %s, true)", (str(run_id),))  # safe behind a pooler
     rows = [(tuple(r[:9]) if len(r) >= 9 else tuple(r) + (src,)) + (settings_id,) for r in rows]
