@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
+import portfolio
 from india_costs import REALISTIC_BP
 
 TRADING_DAYS = 252
@@ -93,6 +94,7 @@ class Result:
     gross_returns: pd.Series
     turnover: pd.Series
     holdings: dict = field(default_factory=dict)
+    ledger: object = None
 
 
 def signal_dates(index: pd.DatetimeIndex) -> list:
@@ -124,76 +126,63 @@ def equal_weights(px: pd.DataFrame) -> pd.Series:
     return pd.Series(1.0 / len(names), index=names)
 
 
+def _reconstitute(membership: Membership, day: pd.Timestamp, row: pd.Series, cols: list):
+    def target(current: pd.Series) -> pd.Series:
+        members = membership.members(day)
+        w = current.copy()
+        held = set(w.index[w > 0])
+        leavers = sorted(held - members)
+        if not leavers:
+            return w
+        freed = float(w[leavers].sum())
+        w[leavers] = 0.0
+        joiners = [t for t in sorted(members - held) if t in cols and not np.isnan(row[t])]
+        if joiners:
+            w[joiners] += freed / len(joiners)
+        elif w.sum() > 0:
+            w = w / w.sum() * (w.sum() + freed)
+        return w
+    return target
+
+
 def simulate(px: pd.DataFrame, weight_fn: Callable[[pd.DataFrame], pd.Series], cfg: BacktestConfig, name: str,
              rebalance: str = "monthly", timeline: QualityTimeline | None = None,
-             membership: Membership | None = None) -> Result:
+             membership: Membership | None = None, actions=(), basis: str = "total_return",
+             exec_prices: pd.DataFrame | None = None) -> Result:
     px = px.sort_index()
-    rets = px.pct_change(fill_method=None).fillna(0.0)
     dates = px.index
+    cols = list(px.columns)
     position = {d: i for i, d in enumerate(dates)}
     candidates = [d for d in signal_dates(dates) if position[d] >= cfg.warmup_days]
     if rebalance == "once":
         candidates = candidates[:1]
-    orders = {}
+    orders = []
     for d in candidates:
-        exec_pos = position[d] + cfg.lag_days
-        if exec_pos < len(dates):
-            known = px.iloc[: position[d] + 1]
-            if membership is not None:
-                known = known[[c for c in known.columns if c in membership.members(d)]]
-            if timeline is not None:
-                known = timeline.mask(d, known)
-            target = weight_fn(known)
-            if len(target):
-                orders[dates[exec_pos]] = (d, target.reindex(px.columns).fillna(0.0))
-    r_all = rets.to_numpy()
-    targets = {position[d]: (sig, t.to_numpy()) for d, (sig, t) in orders.items()}
-    reconstitute = {}
+        if position[d] + cfg.lag_days >= len(dates):
+            continue
+        known = px.iloc[: position[d] + 1]
+        if membership is not None:
+            known = known[[c for c in known.columns if c in membership.members(d)]]
+        if timeline is not None:
+            known = timeline.mask(d, known)
+        target = weight_fn(known)
+        if len(target):
+            orders.append(portfolio.Order(d, target.reindex(cols).fillna(0.0)))
+    exec_positions = {position[o.signal_date] + cfg.lag_days for o in orders}
     if membership is not None and rebalance == "once" and orders:
-        first_exec = position[min(orders)]
+        first_exec = min(exec_positions)
         for c in membership.change_dates():
             pos = int(dates.searchsorted(c))
-            if first_exec < pos < len(dates) and pos not in targets:
-                reconstitute[pos] = dates[pos]
-    cols = list(px.columns)
-    w = np.zeros(px.shape[1])
-    n = len(dates)
-    net, gross, turn = np.zeros(n), np.zeros(n), np.zeros(n)
-    holdings = {}
-    for i in range(n):
-        r = float(w @ r_all[i])
-        gross[i] = r
-        value = 1 + r
-        if value > 0 and w.any():
-            w = w * (1 + r_all[i]) / value
-        if i in reconstitute and i not in targets:
-            members = membership.members(reconstitute[i])
-            held = {cols[j] for j in np.flatnonzero(w > 0)}
-            leavers = sorted(held - members)
-            if leavers:
-                target = w.copy()
-                freed = sum(target[cols.index(t)] for t in leavers)
-                for t in leavers:
-                    target[cols.index(t)] = 0.0
-                joiners = [t for t in sorted(members - held) if t in cols and not np.isnan(px.iloc[i][t])]
-                if joiners:
-                    for t in joiners:
-                        target[cols.index(t)] += freed / len(joiners)
-                elif target.sum() > 0:
-                    target = target / target.sum() * (target.sum() + freed)
-                targets[i] = (reconstitute[i], target)
-        if i in targets:
-            signal_day, target = targets[i]
-            t = float(np.abs(target - w).sum())
-            r = (1 + r) * (1 - t * cfg.cost_bp / 1e4) - 1
-            w = target.copy()
-            turn[i] = t
-            holdings[signal_day] = sorted(px.columns[target > 0])
-        net[i] = r
-    first = min(orders) if orders else dates[0]
+            if first_exec < pos < len(dates) and pos not in exec_positions:
+                orders.append(portfolio.Order(dates[pos], _reconstitute(membership, dates[pos], px.iloc[pos], cols),
+                                              exec_date=dates[pos]))
+                exec_positions.add(pos)
+    led = portfolio.run(px, orders, cfg.cost_bp, cfg.lag_days, actions, basis, exec_prices=exec_prices)
+    free = portfolio.run(px, orders, 0.0, cfg.lag_days, actions, basis, exec_prices=exec_prices)
+    holdings = {d: sorted(t.index[t > 0]) for d, t in led.targets.items()}
+    first = dates[min(exec_positions)] if orders else dates[0]
     keep = dates >= first
-    return Result(name, pd.Series(net, index=dates)[keep], pd.Series(gross, index=dates)[keep],
-                  pd.Series(turn, index=dates)[keep], holdings)
+    return Result(name, led.returns[keep], free.returns[keep], led.turnover[keep], holdings, led)
 
 
 def _label(x) -> str:

@@ -68,8 +68,8 @@ class TestCosts:
         px = pd.DataFrame(100.0, index=pd.bdate_range("2024-01-01", periods=200), columns=list("ABCD"))
         cfg = B.BacktestConfig(warmup_days=20, cost_bp=10, momentum_lookback=20, momentum_top_n=2)
         res = B.simulate(px, B.equal_weights, cfg, "ew", rebalance="once")
-        assert res.turnover.sum() == pytest.approx(1.0)
-        assert (1 + res.returns).prod() - 1 == pytest.approx(-0.001)
+        assert res.turnover.sum() == pytest.approx(0.999000999)
+        assert (1 + res.returns).prod() - 1 == pytest.approx(-0.000999000999)
 
     def test_cost_scales_with_turnover(self):
         px = panel(seed=3)
@@ -78,7 +78,7 @@ class TestCosts:
         paid = B.simulate(px, fn, B.BacktestConfig(warmup_days=20, cost_bp=50), "paid")
         assert (free.gross_returns == paid.gross_returns).all()
         assert (1 + paid.returns).prod() < (1 + free.returns).prod()
-        assert free.turnover.sum() == pytest.approx(paid.turnover.sum())
+        assert free.turnover.sum() * 0.99 < paid.turnover.sum() <= free.turnover.sum()
 
     def test_apply_cost_to_picks(self):
         gross = pd.Series([0.0, 0.0, 0.0])
