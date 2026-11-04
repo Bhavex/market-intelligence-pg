@@ -7,6 +7,7 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 import yfinance as yf
 
 import db
+import fetch_config
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -15,8 +16,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # in sql/07_trading_calendar.sql, which also uses 16:30.
 FINAL_AFTER = dtime(16, 30)
 
-_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume, source)"
-_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+_COLS = "(ticker, price_date, open, high, low, close, adj_close, volume, source, settings_id)"
+_VALUES = "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
 # source is part of the comparison: an hourly-rebuilt row later confirmed by the daily candle is
 # re-labelled (and versioned) even when the numbers are identical.
 _PRICE_FIELDS = ("open", "high", "low", "close", "adj_close", "volume", "source")
@@ -28,7 +29,7 @@ INSERT INTO daily_prices {_COLS} {_VALUES}
 ON CONFLICT (ticker, price_date) DO UPDATE SET
     open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
     close = EXCLUDED.close, adj_close = EXCLUDED.adj_close,
-    volume = EXCLUDED.volume, source = EXCLUDED.source, loaded_at = now()
+    volume = EXCLUDED.volume, source = EXCLUDED.source, settings_id = EXCLUDED.settings_id, loaded_at = now()
 WHERE ({", ".join("daily_prices." + c for c in _PRICE_FIELDS if c != "adj_close")})
       IS DISTINCT FROM ({", ".join("EXCLUDED." + c for c in _PRICE_FIELDS if c != "adj_close")})
    -- adj_close is recomputed by Yahoo on every download: ignore last-digit wobble (a real dividend
@@ -87,10 +88,10 @@ def _num(x):
     return None if math.isnan(x) else round(x, 4)
 
 
-def _history(ticker: str, retries: int = 3, **kwargs):
+def _history(ticker: str, retries: int = 3, interval: str = "1d", **kwargs):
     for attempt in range(1, retries + 1):
         try:
-            return yf.Ticker(ticker).history(auto_adjust=False, actions=False, **kwargs)
+            return yf.Ticker(ticker).history(**fetch_config.history_kwargs(interval), **kwargs)
         except Exception:
             if attempt == retries:
                 raise
@@ -178,7 +179,7 @@ def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
 
 
 def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,
-                source: str | None = None, intraday: bool = False) -> UpsertStats:
+                source: str | None = None, intraday: bool = False, settings_id: int | None = None) -> UpsertStats:
     """Upsert rows and report how many were inserted, updated (value changed) or unchanged.
     insert_only=True never overwrites an existing row (used for approximate fallback rows).
     Rows are (ticker, date, open, high, low, close, adj_close, volume); the provenance label
@@ -194,7 +195,7 @@ def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool
     run_id = db.current_run_id()
     if run_id is not None:   # provenance for the versioning trigger; transaction-local, so it is
         conn.execute("SELECT set_config('app.run_id', %s, true)", (str(run_id),))  # safe behind a pooler
-    rows = [tuple(r) if len(r) == 9 else tuple(r) + (src,) for r in rows]
+    rows = [(tuple(r[:9]) if len(r) >= 9 else tuple(r) + (src,)) + (settings_id,) for r in rows]
     updated_dates = []
     with conn.cursor() as cur:
         cur.executemany(INSERT_ONLY_SQL if insert_only else UPSERT_SQL, rows, returning=True)

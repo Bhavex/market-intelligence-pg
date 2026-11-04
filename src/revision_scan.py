@@ -13,7 +13,8 @@ import argparse
 import logging
 from datetime import date
 
-from db import active_tickers, get_conn, pipeline_run
+import fetch_config
+from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
 
@@ -30,13 +31,17 @@ def main():
         tickers = args.tickers or active_tickers(conn)
         holidays = load_holidays(conn)
         with pipeline_run(conn, "revision_scan") as run:
+            fetch_config.check_version()
+            settings_daily = fetch_config.register(conn, "1d")
+            settings_hourly = fetch_config.register(conn, "1h")
+            record_settings(conn, run["run_id"], settings_daily)
             earliest, updated, inserted = None, 0, 0
             for i, t in enumerate(tickers, 1):
                 try:
                     f = fetch_rows_ex(t, start)
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
-                    s = upsert_rows(conn, checked.daily)
-                    g = upsert_rows(conn, checked.fallback, insert_only=True)
+                    s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)
                     updated += s.updated
                     inserted += s.inserted + g.inserted
                     if s.updated_dates:

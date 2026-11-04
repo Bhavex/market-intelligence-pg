@@ -35,6 +35,14 @@ def current_run_id():
     return _CURRENT_RUN["id"]
 
 
+def record_settings(conn, run_id, settings_id) -> None:
+    if run_id is None or settings_id is None:
+        return
+    with conn.cursor() as cur:
+        cur.execute("UPDATE pipeline_runs SET settings_id = %s WHERE run_id = %s", (settings_id, run_id))
+    conn.commit()
+
+
 @contextmanager
 def pipeline_run(conn, job_name: str):
     """Logs a row in pipeline_runs. Yields a dict the job fills with

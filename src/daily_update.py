@@ -8,7 +8,8 @@ rows were inserted, updated, unchanged or held back. Signals are recomputed afte
 import logging
 from datetime import date
 
-from db import active_tickers, get_conn, pipeline_run
+import fetch_config
+from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import _now, fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
 
@@ -39,6 +40,10 @@ def main():
         print(f"Re-upserting the last {HEAL_SESSIONS} trading sessions: from {heal_start}")
 
         with pipeline_run(conn, "daily_update") as run:
+            fetch_config.check_version()
+            settings_daily = fetch_config.register(conn, "1d")
+            settings_hourly = fetch_config.register(conn, "1h")
+            record_settings(conn, run["run_id"], settings_daily)
             earliest_start = _now().date()
             totals = dict(inserted=0, updated=0, unchanged=0, held_back=0, rejected=0)
             for t in tickers:
@@ -52,8 +57,8 @@ def main():
                         continue
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
                     totals["rejected"] += len(checked.result.rejected)
-                    s = upsert_rows(conn, checked.daily)
-                    g = upsert_rows(conn, checked.fallback, insert_only=True)    # approximate rows only fill gaps
+                    s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)    # approximate rows only fill gaps
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):

@@ -36,8 +36,14 @@ class TestUpsertRows:
         prices.upsert_rows(fake_conn, [prow(date(2026, 10, 12))], insert_only=True)
         sql_daily, rows_daily = fake_conn.executemany_calls[0]
         sql_fb, rows_fb = fake_conn.executemany_calls[1]
-        assert rows_daily[0][-1] == "yahoo_daily" and "DO UPDATE" in sql_daily
-        assert rows_fb[0][-1] == "yahoo_hourly" and "DO NOTHING" in sql_fb
+        assert rows_daily[0][8] == "yahoo_daily" and "DO UPDATE" in sql_daily
+        assert rows_fb[0][8] == "yahoo_hourly" and "DO NOTHING" in sql_fb
+
+    def test_settings_id_is_stored_with_each_row(self, fake_conn, frozen_now):
+        frozen_now(NOW)
+        prices.upsert_rows(fake_conn, [prow(date(2026, 10, 9))], settings_id=42)
+        sql, rows = fake_conn.executemany_calls[0]
+        assert rows[0][9] == 42 and "settings_id" in sql
 
     def test_insert_only_never_overwrites(self, fake_conn, frozen_now):
         frozen_now(NOW)
@@ -91,6 +97,15 @@ class TestFetch:
         f = prices.fetch_rows_ex("INFY.NS", date(2026, 10, 9))
         assert [r[1] for r in f.daily] == [date(2026, 10, 9), date(2026, 10, 13)]
         assert f.fallback == [("INFY.NS", date(2026, 10, 12), 100.5, 102.0, 100.0, 101.2, 101.2, 30)]
+
+    def test_every_price_flag_is_explicit(self, fake_yf, frozen_now):
+        frozen_now(NOW)
+        t = FakeTicker(daily=bars(["2026-10-13"], [100]))
+        fake_yf["INFY.NS"] = t
+        prices.fetch_rows_ex("INFY.NS", date(2026, 10, 13))
+        call = t.calls[0]
+        for flag in ("auto_adjust", "back_adjust", "repair", "actions", "prepost", "keepna", "rounding"):
+            assert call[flag] is False, flag
 
     def test_request_is_unadjusted_with_explicit_end(self, fake_yf, frozen_now):
         frozen_now(NOW)
@@ -155,7 +170,7 @@ class TestBackfill:
         fake_yf["INFY.NS"] = FakeTicker(daily=daily, hourly=hourly)
         conn = base_conn(["INFY.NS"])
         self.run(monkeypatch, conn, ["--start", "2026-10-09"])
-        modes = [("DO NOTHING" in sql, [r[-1] for r in rows]) for sql, rows in conn.executemany_calls
+        modes = [("DO NOTHING" in sql, [r[8] for r in rows]) for sql, rows in conn.executemany_calls
                  if "daily_prices" in sql]
         assert (False, ["yahoo_daily", "yahoo_daily"]) in modes
         assert (True, ["yahoo_hourly"]) in modes
