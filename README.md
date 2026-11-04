@@ -5,53 +5,157 @@
 [![Publish dashboard site](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23495953.svg)](https://doi.org/10.5281/zenodo.23495953)
 
-**Live dashboard: https://bhavex.github.io/market-intelligence-pg/**
+A self-updating PostgreSQL warehouse of **25 NSE large caps in 5 sectors**. It has an in-database signal engine, a
+Streamlit dashboard, a read-only REST API, an honest backtest and a measured indexing strategy. Built as a DBMS course
+project at VIT Vellore.
 
-A PostgreSQL database of **25 NSE large-cap stocks in 5 sectors** (IT, Banking, Auto, Pharma, FMCG) that **updates itself
-every weekday after the market closes**:
+**Static site: https://bhavex.github.io/market-intelligence-pg/** · **Run everything locally: `docker compose up --build`**
 
-1. prices are fetched from Yahoo Finance (`yfinance`);
-2. every row is **validated** before it is stored;
-3. the rows are upserted idempotently;
-4. trading signals are computed **inside the database** with SQL window functions;
-5. data-quality checks run, and the Excel / Power BI reports and the public dashboard read the result.
+## Highlights
 
-Built as a DBMS course project at VIT Vellore.
+- **Automated pipeline:** loads every weekday after the NSE close, three times a day for resilience. Prices are
+  validated before insert, upserted idempotently, and turned into signals by one PL/pgSQL function using window
+  functions. A failed run opens a GitHub issue by itself.
+- **About 212,500 price rows and as many signal rows** in production (25 dashboard stocks plus a research universe),
+  with history from 2015.
+- **Schema enforced by the database:** BCNF schema, composite keys, CHECK and FK constraints added without downtime
+  (`NOT VALID` → `VALIDATE`), audit triggers, a bitemporal price history, and a least-privilege read-only role.
+- **Indexes measured, not assumed:**
+  - API pagination takes **0.05 ms** with the primary key, against 21.5 ms without it (414×).
+  - The sector view takes **0.21 ms** materialized, against 216 ms as a plain view.
+  - A view rewrite found by the study cut pipeline-health queries **from 20.2 ms to 0.65 ms**.
 
-> **Scope.** End-of-day data (history from 2015 plus daily updates), not a real-time feed. Educational analytics, not
-> investment advice.
+  Details: [PERFORMANCE.md](docs/PERFORMANCE.md).
+- **Honest backtest:** after realistic NSE costs (11.2 bp one-way), sector rotation ends at ₹359 against ₹350 for
+  buy-and-hold over Feb 2015 – Oct 2026, but with **Sharpe 0.62 vs 0.84** and a deeper drawdown. In other words, it
+  does not beat the benchmark on a risk-adjusted basis ([BACKTEST.md](docs/BACKTEST.md)).
+- **267 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
+  a throwaway PostgreSQL 17 container.
+
+> **Scope.** End-of-day data, not a real-time feed. Educational analytics, not investment advice.
 
 ## Contents
-[Architecture](#architecture) · [Data model](#data-model) · [Stock universe](#stock-universe) · [Setup](#setup) ·
-[Pipeline behaviour](#pipeline-behaviour) · [Data quality](#data-quality) · [Signals](#signals) ·
-[Reporting views](#reporting-views-power-bi--excel) · [Testing](#testing) · [Repository layout](#repository-layout) ·
-[DBMS concepts](#dbms-concepts-demonstrated) · [Limitations](#known-limitations) · [Team](#team)
+[Architecture](#architecture) · [Dashboard](#dashboard) · [REST API](#rest-api) · [Backtest](#backtest) ·
+[Performance](#query-performance) · [Data model](#data-model) · [Stock universe](#stock-universe) · [Setup](#setup) ·
+[Docker](#run-it-with-docker) · [Pipeline behaviour](#pipeline-behaviour) · [Data quality](#data-quality) ·
+[Signals](#signals) · [Reporting views](#reporting-views-power-bi--excel) · [Testing](#testing) ·
+[Repository layout](#repository-layout) · [DBMS concepts](#dbms-concepts-demonstrated) · [Limitations](#known-limitations)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph GH["GitHub Actions (weekdays 17:10, 20:10, next-day 07:10 IST)"]
-        S0["setup_db.py<br/>apply sql/*.sql (idempotent)"] --> F["prices.py<br/>fetch last 5 NSE sessions<br/>hold back unfinished bars"]
-        F --> V["validation.py<br/>reject bad rows, warn on gaps/jumps"]
-        V --> U["UPSERT daily_prices<br/>ON CONFLICT … WHERE IS DISTINCT FROM"]
-        U --> R["refresh_signals()<br/>PL/pgSQL + window functions"]
-        R --> Q["post_load.py<br/>REFRESH MATERIALIZED VIEW<br/>10 data-quality checks"]
-        Q --> C["verify_52w.py<br/>SQL vs pandas recomputation"]
-    end
     Y[(Yahoo Finance)] --> F
-    V -. rejected rows .-> RJ[(rejected_prices)]
-    U --> DB[(PostgreSQL 17 on Neon)]
-    R --> DB
-    U -. triggers .-> AU[(audit_log + price_versions)]
-    DB -->|readonly_access role| PBI[Power BI / Excel]
-    DB -->|export_site.py| WEB[GitHub Pages dashboard]
-    T["tests.yml<br/>pytest on every push / PR"] -.-> GH
+
+    subgraph ACT["GitHub Actions · weekdays 17:10, 20:10 and 07:10 IST"]
+        direction TB
+        F["fetch last 5 NSE sessions<br/>prices.py"] --> V["validate rows<br/>validation.py"]
+        V --> U["idempotent UPSERT<br/>daily_prices"]
+        U --> R["refresh_signals()<br/>PL/pgSQL window functions"]
+        R --> Q["REFRESH MATERIALIZED VIEW<br/>10 data-quality checks"]
+        Q -->|failure| AL["open / update GitHub issue<br/>pipeline_alert.py"]
+    end
+
+    subgraph PG["PostgreSQL 17 · Neon"]
+        direction TB
+        T1[("daily_prices · signals<br/>companies · sectors · cities")]
+        T2[("price_versions · audit_log<br/>rejected_prices · pipeline_runs")]
+        VW["reporting views + mv_sector_daily"]
+        T1 --> VW
+    end
+
+    U --> T1
+    R --> T1
+    U -. triggers .-> T2
+    V -. rejected .-> T2
+
+    VW -->|readonly_access| PBI["Power BI / Excel"]
+    VW -->|READ ONLY transactions| DS["marketintel.datasource"]
+    DS --> ST["Streamlit dashboard<br/>app/"]
+    DS --> API["FastAPI · /v1<br/>api/"]
+    DEMO[("bundled synthetic<br/>sample data")] -. no DATABASE_URL .-> DS
+    VW -->|export_site.py| WEB["GitHub Pages site"]
 ```
 
-Three scheduled runs per trading day, because a delayed GitHub schedule or late Yahoo data must not cost a day. Every
-load is an upsert, so running it again is always safe. The 07:10 IST run is *strict*: if a trading day is still
-missing, the job fails and GitHub emails the owner.
+- **Write path (top):** runs only in GitHub Actions with the `DATABASE_URL` secret.
+- **Read path (right):** everything reads the reporting views:
+  - Power BI and Excel connect through the read-only role;
+  - the dashboard and the API share one data-source module that runs queries in `READ ONLY` transactions. Without a
+    database it falls back to bundled synthetic data, so both run anywhere.
+- **Resilience:** three scheduled runs a day, so a delayed schedule or late Yahoo data never costs a session. The
+  07:10 IST run is strict and fails if any trading day is missing.
+
+## Dashboard
+
+A five-page Streamlit app (`app/streamlit_app.py`): sector overview, company detail, sector strength, anomalies, and
+pipeline health. It has a demo mode, so it runs with no database.
+
+```bash
+pip install -r app/requirements.txt && streamlit run app/streamlit_app.py
+```
+
+| Sector overview | Company detail |
+|---|---|
+| ![Sector overview](docs/img/dashboard_overview.jpg) | ![Company detail](docs/img/dashboard_company.jpg) |
+| **Sector strength** | **Pipeline health** |
+| ![Sector strength](docs/img/dashboard_strength.jpg) | ![Pipeline health](docs/img/dashboard_pipeline.jpg) |
+
+*The screenshots show synthetic data served from the Docker stack.* To deploy on Streamlit Community Cloud in a few
+clicks, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## REST API
+
+A read-only FastAPI service (`api/main.py`), with OpenAPI docs at `/docs`:
+
+| Endpoint | |
+|---|---|
+| `GET /v1/sectors` · `/v1/sectors/{sector}/companies` | sectors with 1D–YTD returns, companies per sector |
+| `GET /v1/companies` · `/v1/companies/{ticker}` | paginated list; one company with its latest quote |
+| `GET /v1/companies/{ticker}/prices` · `/signals` | OHLCV and SQL-computed signals with `start`/`end`, `order`, pagination |
+| `GET /v1/sectors/strength` | sector ranking for one day or a date range |
+| `GET /v1/pipeline/status` | freshness, stale tickers, last run of each job |
+
+```bash
+curl "localhost:8000/v1/companies/INFY.NS/prices?start=2026-01-01&order=desc&page_size=50"
+```
+
+Every error uses the same envelope (`{"error": {"code", "message", "details"}}`) for 400, 404, 405, 422 and 503.
+Tickers, dates and page sizes are validated. Write methods return 405. There are 34 tests, none needing a database.
+See [docs/API.md](docs/API.md).
+
+## Backtest
+
+`src/strategy_backtest.py` tests the momentum and sector-strength signals against an equal-weight buy-and-hold of the
+same 25 stocks. Signals use data only up to the signal close; trades fill at the next session's close; every rupee
+traded pays 11.2 bp.
+
+| Real data, Feb 2015 – Oct 2026, after costs | ₹100 becomes | CAGR | Sharpe | Max drawdown |
+|---|---:|---:|---:|---:|
+| Sector-strength rotation | 359 | 11.5% | 0.62 | −31.6% |
+| Equal-weight, monthly rebalanced | 420 | 13.0% | **0.94** | −21.7% |
+| **Buy-and-hold benchmark** | 350 | 11.3% | 0.84 | **−19.4%** |
+
+![Real-data backtest](docs/img/backtest_real_sector_rotation.png)
+
+**The signals do not beat the benchmark on a risk-adjusted basis.** Rotation's small gross edge is consumed by
+switching sectors in 80% of months. The stock-level momentum rule needs real daily prices that this build environment
+could not reach, so it is not reported. Its engine is verified on synthetic data, and a manual workflow runs it on the
+production database. Full write-up: [docs/BACKTEST.md](docs/BACKTEST.md).
+
+## Query performance
+
+`EXPLAIN (ANALYZE, BUFFERS)` on 259,600 synthetic rows (100 tickers × 10 years, about production size), with and
+without indexes. Every index drop runs inside a transaction that is rolled back.
+
+| Query | Indexed | No indexes | Why |
+|---|---:|---:|---|
+| API prices page, newest first | 0.05 ms | 21.5 ms | backward scan of the `(ticker, price_date)` primary key, stops after 100 rows |
+| Latest price per stock (sector overview) | 1.6 ms | > 30 s | `LATERAL … LIMIT 1` is one index probe per stock, or a full scan per row without the index |
+| Anomalies, last 180 days | 0.58 ms | 40.5 ms | partial index `WHERE is_anomaly` |
+| Sector stats, 1 year | 0.21 ms (materialized) | 216 ms (plain view) | aggregates stored once per load |
+| Data freshness | 0.65 ms (was 20.2 ms) | | rewritten from `GROUP BY` to a per-stock `LATERAL` probe after the study |
+
+Method, all ten queries, both scales and what each result means: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ## Data model
 
@@ -201,6 +305,27 @@ CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'choose-a-long-random-password';
 GRANT readonly_access TO powerbi_reader;
 ```
 
+## Run it with Docker
+
+One command starts everything on your machine with **synthetic** data. No Neon account, no secrets, and nothing leaves
+your computer:
+
+```bash
+docker compose up --build
+```
+
+| Service | What it does | URL |
+|---|---|---|
+| `db` | PostgreSQL 17 in a named volume (`pgdata`) | `localhost:5432` is not published |
+| `init` | runs `scripts/docker_init.py`: applies every `sql/*.sql` file, loads 10 years × 25 tickers of synthetic prices (about 65,000 rows), computes signals with `refresh_signals()`, and creates a read-only login (`dashboard_reader`, member of `readonly_access`); then exits | |
+| `dashboard` | Streamlit app, connected as the read-only login (green **LIVE DATABASE** badge) | http://localhost:8501 |
+| `api` | FastAPI, same read-only login | http://localhost:8000/docs |
+
+`dashboard` and `api` wait until `init` has completed successfully. Re-running is safe: the loader skips when prices
+already exist. `docker compose down -v` deletes the volume and starts from scratch. The passwords in
+`docker-compose.yml` are local-only defaults; override them with `POSTGRES_PASSWORD` / `READER_PASSWORD` in your shell
+or a `.env` file, and `SAMPLE_YEARS` sets the amount of synthetic history. The image runs as a non-root user.
+
 ## Pipeline behaviour
 
 | Rule | How |
@@ -275,18 +400,27 @@ and add columns at the end only.
 pip install -r requirements-dev.txt
 python -m pytest
 ```
-- **No database and no internet needed.** `tests/conftest.py` provides a fake psycopg connection and a fake
-  `yfinance.Ticker`. The suite covers validation, signal maths, upsert counting, fallback handling, the session guard,
-  and the backfill and daily jobs end to end.
-- **SQL tests** (`tests/test_db_integration.py` and the DB classes in the older unittest files) run when
-  `TEST_DATABASE_URL` points at a **throwaway** database with the schema applied. They run inside rolled-back
-  transactions and never read `DATABASE_URL`.
+
+There are **267 tests**. Without a database, 218 run and 49 database tests skip by design:
+- **No database and no internet needed** for most of them. `tests/conftest.py` fakes the psycopg connection and
+  `yfinance.Ticker`. The suite covers:
+  - validation, signal maths, upsert counting and the session guard;
+  - the backfill and daily jobs end to end;
+  - every dashboard page, rendered with Streamlit's `AppTest` in demo mode;
+  - every API endpoint and error;
+  - the backtest's look-ahead, lag and cost rules;
+  - the failure-alert script.
+- **SQL tests** run when `TEST_DATABASE_URL` points at a **throwaway** database. They cover `refresh_signals()` against
+  an independent pandas engine, every constraint and view, the Power BI column contract, and live-mode API calls. They
+  run inside rolled-back transactions and never read `DATABASE_URL`.
 
 ```bash
 TEST_DATABASE_URL=postgresql://localhost/market_test python -m pytest
 ```
-- CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.12 and 3.13. It also starts a PostgreSQL 17 service
-  container, applies every SQL file twice (proving idempotency) and runs the SQL tests.
+
+CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.12 and 3.13. A second job starts a PostgreSQL 17
+service container, applies every SQL file twice (to prove they are idempotent), loads synthetic data and runs the full
+suite.
 
 ## Repository layout
 
@@ -300,9 +434,15 @@ TEST_DATABASE_URL=postgresql://localhost/market_test python -m pytest
 | `src/verify_52w.py`, `dq_audit.py` | signal verification, DB vs Yahoo audit |
 | `src/fundamentals.py`, `benchmark.py`, `export_site.py` | weekly fundamentals, `EXPLAIN ANALYZE` benchmarks, dashboard export |
 | `src/revision_scan.py`, `official_prices.py`, `alt_feed.py`, `fragility.py`, `trust_report.py`, `universe.py`, `export_dataset.py` | research study |
+| `app/` | Streamlit dashboard (`streamlit_app.py`, `views/`) and its bundled synthetic `sample_data/` |
+| `api/` | FastAPI service (`main.py`, `schemas.py`) |
+| `marketintel/` | shared read-only data source (`datasource.py`) and synthetic price generator (`sample.py`) |
+| `src/strategy_backtest.py`, `src/perf_study.py` | signal backtest; `EXPLAIN ANALYZE` index study |
+| `scripts/` | `load_sample_data.py` / `build_demo_data.py` (throwaway databases only), `docker_init.py`, `pipeline_alert.py` |
+| `Dockerfile`, `docker-compose.yml` | one-command local stack |
 | `tests/` | pytest suite (mocked) and SQL integration tests |
 | `demo/viva_queries.sql`, `demo/transactions_demo.sql` | demo queries (joins, CTEs, window functions) and an ACID / isolation demo |
-| `docs/` | [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
+| `docs/` | [API](docs/API.md), [BACKTEST](docs/BACKTEST.md), [PERFORMANCE](docs/PERFORMANCE.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [RESUME](docs/RESUME.md), [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
 | `AUDIT.md` | ranked audit of bugs, risks and fixes |
 | `site/` | static dashboard (Chart.js + Leaflet) |
 

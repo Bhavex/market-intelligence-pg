@@ -41,3 +41,41 @@ jobs:
         run: python src/post_load.py
       - name: Verify 52-week signals
         run: python src/verify_52w.py
+
+  alert:
+    needs: update
+    if: failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - name: Open or update the pipeline-failure issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_SCHEDULE: ${{ github.event.schedule }}
+        run: python3 scripts/pipeline_alert.py failure
+
+  resolve:
+    needs: update
+    if: success()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - name: Close the pipeline-failure issue after a successful run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/pipeline_alert.py success

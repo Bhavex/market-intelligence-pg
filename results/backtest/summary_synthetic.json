@@ -1,0 +1,78 @@
+{
+  "config": {
+    "cost_bp": 11.2,
+    "lag_days": 1,
+    "momentum_lookback": 60,
+    "momentum_top_n": 5,
+    "sector_lookback": 20,
+    "sector_top_k": 1,
+    "warmup_days": 61
+  },
+  "source": "synthetic",
+  "metrics": {
+    "momentum": {
+      "strategy": "Momentum top 5 (60d)",
+      "start": "2017-02-01",
+      "end": "2026-10-30",
+      "final_value_of_100": 91.70113041879276,
+      "total_return": -0.08298869581207247,
+      "cagr": -0.008548443525989824,
+      "volatility": 0.18098223607834418,
+      "sharpe": 0.04295953197005286,
+      "max_drawdown": -0.47437574700709495,
+      "positive_months": 0.48717948717948717,
+      "hit_rate_vs_benchmark": 0.4444444444444444,
+      "excess_cagr_vs_benchmark": -0.04558883371926481,
+      "turnover_per_year": 11.561826263992875,
+      "cagr_before_costs": 0.0043816900701145745
+    },
+    "sector_strength": {
+      "strategy": "Sector strength top 1 (20d)",
+      "start": "2017-02-01",
+      "end": "2026-10-30",
+      "final_value_of_100": 176.37518497167406,
+      "total_return": 0.7637518497167406,
+      "cagr": 0.057842130075351106,
+      "volatility": 0.19345043857350325,
+      "sharpe": 0.38732185670820674,
+      "max_drawdown": -0.31078327632296976,
+      "positive_months": 0.5042735042735043,
+      "hit_rate_vs_benchmark": 0.49572649572649574,
+      "excess_cagr_vs_benchmark": 0.02080173988207612,
+      "turnover_per_year": 16.682941246934412,
+      "cagr_before_costs": 0.07781595816012188
+    },
+    "equal_weight_rebalanced": {
+      "strategy": "Equal-weight, monthly rebalanced",
+      "start": "2017-02-01",
+      "end": "2026-10-30",
+      "final_value_of_100": 159.6889841987854,
+      "total_return": 0.5968898419878539,
+      "cagr": 0.047474948408895434,
+      "volatility": 0.15300369154479582,
+      "sharpe": 0.3796076125736538,
+      "max_drawdown": -0.31654204378639506,
+      "positive_months": 0.49572649572649574,
+      "hit_rate_vs_benchmark": 0.46153846153846156,
+      "excess_cagr_vs_benchmark": 0.010434558215620449,
+      "turnover_per_year": 0.6826390312016009,
+      "cagr_before_costs": 0.04827619276261541
+    },
+    "benchmark": {
+      "strategy": "Equal-weight buy-and-hold",
+      "start": "2017-02-01",
+      "end": "2026-10-30",
+      "final_value_of_100": 144.34388254263956,
+      "total_return": 0.4434388254263957,
+      "cagr": 0.037040390193274986,
+      "volatility": 0.15457290113770464,
+      "sharpe": 0.31252636089636604,
+      "max_drawdown": -0.31708753312432314,
+      "positive_months": 0.5299145299145299,
+      "hit_rate_vs_benchmark": null,
+      "excess_cagr_vs_benchmark": null,
+      "turnover_per_year": 0.09909555642941408,
+      "cagr_before_costs": 0.03715555911677382
+    }
+  }
+}
