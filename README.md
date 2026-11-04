@@ -201,6 +201,27 @@ CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'choose-a-long-random-password';
 GRANT readonly_access TO powerbi_reader;
 ```
 
+## Run it with Docker
+
+One command starts everything on your machine with **synthetic** data. No Neon account, no secrets, and nothing leaves
+your computer:
+
+```bash
+docker compose up --build
+```
+
+| Service | What it does | URL |
+|---|---|---|
+| `db` | PostgreSQL 17 in a named volume (`pgdata`) | `localhost:5432` is not published |
+| `init` | runs `scripts/docker_init.py`: applies every `sql/*.sql` file, loads 10 years × 25 tickers of synthetic prices (about 65,000 rows), computes signals with `refresh_signals()`, and creates a read-only login (`dashboard_reader`, member of `readonly_access`); then exits | |
+| `dashboard` | Streamlit app, connected as the read-only login (green **LIVE DATABASE** badge) | http://localhost:8501 |
+| `api` | FastAPI, same read-only login | http://localhost:8000/docs |
+
+`dashboard` and `api` wait until `init` has completed successfully. Re-running is safe: the loader skips when prices
+already exist. `docker compose down -v` deletes the volume and starts from scratch. The passwords in
+`docker-compose.yml` are local-only defaults; override them with `POSTGRES_PASSWORD` / `READER_PASSWORD` in your shell
+or a `.env` file, and `SAMPLE_YEARS` sets the amount of synthetic history. The image runs as a non-root user.
+
 ## Pipeline behaviour
 
 | Rule | How |

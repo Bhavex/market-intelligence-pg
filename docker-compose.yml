@@ -1,0 +1,68 @@
+name: nse-sector-intelligence
+
+x-app: &app
+  build: .
+  image: nse-sector-intelligence:local
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: market
+      POSTGRES_USER: market
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U market -d market"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  init:
+    <<: *app
+    command: ["python", "scripts/docker_init.py"]
+    environment:
+      DATABASE_URL: postgresql://market:${POSTGRES_PASSWORD:-local-dev-only}@db:5432/market
+      READER_USER: dashboard_reader
+      READER_PASSWORD: ${READER_PASSWORD:-reader-local-dev-only}
+      SAMPLE_YEARS: ${SAMPLE_YEARS:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  dashboard:
+    <<: *app
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      DATABASE_URL: postgresql://dashboard_reader:${READER_PASSWORD:-reader-local-dev-only}@db:5432/market
+    ports:
+      - "8501:8501"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  api:
+    <<: *app
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dashboard_reader:${READER_PASSWORD:-reader-local-dev-only}@db:5432/market
+    ports:
+      - "8000:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  pgdata:
