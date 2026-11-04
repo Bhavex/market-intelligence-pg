@@ -22,3 +22,5 @@ raw/
 
 # Internal working notes and audit logs: local only, never committed.
 results/private/
+
+adjudication/
