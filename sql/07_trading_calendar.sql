@@ -60,13 +60,19 @@ $$;
 
 -- Freshness at a glance: which stocks are missing the expected day?
 CREATE OR REPLACE VIEW v_data_freshness AS
+WITH expected AS (SELECT expected_latest_trading_day() AS d)
 SELECT c.ticker,
-       MAX(p.price_date)              AS latest_price_date,
-       expected_latest_trading_day()  AS expected_date,
-       MAX(p.price_date) >= expected_latest_trading_day() AS is_fresh
+       l.price_date                   AS latest_price_date,
+       e.d                            AS expected_date,
+       l.price_date >= e.d            AS is_fresh
 FROM companies c
-LEFT JOIN daily_prices p ON p.ticker = c.ticker
-WHERE c.is_active AND c.in_dashboard        -- research stocks never fail the pipeline
-GROUP BY c.ticker;
+CROSS JOIN expected e
+LEFT JOIN LATERAL (
+    SELECT p.price_date FROM daily_prices p
+    WHERE p.ticker = c.ticker
+    ORDER BY p.price_date DESC
+    LIMIT 1
+) l ON TRUE
+WHERE c.is_active AND c.in_dashboard;       -- research stocks never fail the pipeline
 
 GRANT SELECT ON market_holidays, v_data_freshness TO readonly_access;

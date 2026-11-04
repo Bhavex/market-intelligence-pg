@@ -1,0 +1,232 @@
+{
+  "server_version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+  "machine": "Linux x86_64",
+  "runs": 9,
+  "rows_daily_prices": 259600,
+  "tickers": 100,
+  "rows_signals": 259600,
+  "first_date": "2016-11-04",
+  "last_date": "2026-11-04",
+  "size_daily_prices": "39 MB",
+  "size_signals": "83 MB",
+  "ticker": "INFY.NS",
+  "results": {
+    "indexed": {
+      "company_history_1y": {
+        "exec_ms": 2.975,
+        "plan_ms": 1.04,
+        "buffers": 2004,
+        "rows": 249,
+        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Seq scan (sectors) \u2026"
+      },
+      "api_prices_page": {
+        "exec_ms": 0.061,
+        "plan_ms": 0.043,
+        "buffers": 7,
+        "rows": 100,
+        "plan": "Index scan (daily_prices_pkey)"
+      },
+      "api_prices_count": {
+        "exec_ms": 0.104,
+        "plan_ms": 0.08,
+        "buffers": 5,
+        "rows": 1,
+        "plan": "Index-only scan (daily_prices_pkey)"
+      },
+      "all_stocks_one_day": {
+        "exec_ms": 0.194,
+        "plan_ms": 0.041,
+        "buffers": 102,
+        "rows": 100,
+        "plan": "Bitmap heap scan (daily_prices), Bitmap Index scan (idx_daily_prices_date)"
+      },
+      "latest_prices_by_sector": {
+        "exec_ms": 0.989,
+        "plan_ms": 0.568,
+        "buffers": 306,
+        "rows": 25,
+        "plan": "Subquery Scan (), Index-only scan (idx_daily_prices_date), Seq scan (companies) \u2026"
+      },
+      "anomalies_180d": {
+        "exec_ms": 0.359,
+        "plan_ms": 0.058,
+        "buffers": 230,
+        "rows": 350,
+        "plan": "Bitmap heap scan (signals), Bitmap Index scan (idx_signals_anomaly)"
+      },
+      "sector_daily_1y_view": {
+        "exec_ms": 206.245,
+        "plan_ms": 1.297,
+        "buffers": 33083,
+        "rows": 1245,
+        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026"
+      },
+      "sector_daily_1y_matview": {
+        "exec_ms": 0.188,
+        "plan_ms": 0.032,
+        "buffers": 26,
+        "rows": 1245,
+        "plan": "Bitmap heap scan (mv_sector_daily), Bitmap Index scan (ux_mv_sector_daily)"
+      },
+      "sector_strength_latest": {
+        "exec_ms": 0.443,
+        "plan_ms": 0.772,
+        "buffers": 180,
+        "rows": 5,
+        "plan": "Subquery Scan (), Seq scan (companies), Index-only scan (daily_prices_pkey) \u2026"
+      },
+      "freshness": {
+        "exec_ms": 20.206,
+        "plan_ms": 0.288,
+        "buffers": 445,
+        "rows": 25,
+        "plan": "Index scan (companies_pkey), Index-only scan (daily_prices_pkey)"
+      }
+    },
+    "no_secondary_indexes": {
+      "company_history_1y": {
+        "exec_ms": 2.34,
+        "plan_ms": 0.803,
+        "buffers": 2004,
+        "rows": 249,
+        "plan": "Index scan (daily_prices_pkey), Seq scan (companies), Seq scan (sectors) \u2026"
+      },
+      "api_prices_page": {
+        "exec_ms": 0.051,
+        "plan_ms": 0.037,
+        "buffers": 7,
+        "rows": 100,
+        "plan": "Index scan (daily_prices_pkey)"
+      },
+      "api_prices_count": {
+        "exec_ms": 0.064,
+        "plan_ms": 0.04,
+        "buffers": 5,
+        "rows": 1,
+        "plan": "Index-only scan (daily_prices_pkey)"
+      },
+      "all_stocks_one_day": {
+        "exec_ms": 17.045,
+        "plan_ms": 0.098,
+        "buffers": 1126,
+        "rows": 100,
+        "plan": "Index scan (daily_prices_pkey)"
+      },
+      "latest_prices_by_sector": {
+        "exec_ms": 43.111,
+        "plan_ms": 0.616,
+        "buffers": 4008,
+        "rows": 25,
+        "plan": "Subquery Scan (), Seq scan (daily_prices), Seq scan (companies) \u2026"
+      },
+      "anomalies_180d": {
+        "exec_ms": 37.693,
+        "plan_ms": 0.073,
+        "buffers": 8078,
+        "rows": 350,
+        "plan": "Seq scan (signals)"
+      },
+      "sector_daily_1y_view": {
+        "exec_ms": 194.633,
+        "plan_ms": 1.213,
+        "buffers": 33083,
+        "rows": 1245,
+        "plan": "Seq scan (companies), Seq scan (sectors), Seq scan (cities) \u2026"
+      },
+      "sector_daily_1y_matview": {
+        "exec_ms": 0.788,
+        "plan_ms": 0.023,
+        "buffers": 197,
+        "rows": 1245,
+        "plan": "Seq scan (mv_sector_daily)"
+      },
+      "sector_strength_latest": {
+        "exec_ms": 0.282,
+        "plan_ms": 0.628,
+        "buffers": 180,
+        "rows": 5,
+        "plan": "Subquery Scan (), Seq scan (companies), Index-only scan (daily_prices_pkey) \u2026"
+      },
+      "freshness": {
+        "exec_ms": 19.293,
+        "plan_ms": 0.226,
+        "buffers": 445,
+        "rows": 25,
+        "plan": "Index scan (companies_pkey), Index-only scan (daily_prices_pkey)"
+      }
+    },
+    "no_indexes_at_all": {
+      "company_history_1y": {
+        "exec_ms": 68.872,
+        "plan_ms": 0.577,
+        "buffers": 19865,
+        "rows": 249,
+        "plan": "Seq scan (cities), Seq scan (companies), Seq scan (sectors) \u2026"
+      },
+      "api_prices_page": {
+        "exec_ms": 21.087,
+        "plan_ms": 0.083,
+        "buffers": 3705,
+        "rows": 100,
+        "plan": "Seq scan (daily_prices)"
+      },
+      "api_prices_count": {
+        "exec_ms": 18.76,
+        "plan_ms": 0.083,
+        "buffers": 3705,
+        "rows": 1,
+        "plan": "Seq scan (daily_prices)"
+      },
+      "all_stocks_one_day": {
+        "exec_ms": 18.087,
+        "plan_ms": 0.056,
+        "buffers": 3705,
+        "rows": 100,
+        "plan": "Seq scan (daily_prices)"
+      },
+      "latest_prices_by_sector": {
+        "exec_ms": null,
+        "timed_out_after_s": 60,
+        "plan_ms": null,
+        "buffers": null,
+        "rows": null,
+        "plan": "Subquery Scan (), Seq scan (daily_prices), Index scan (sectors_sector_name_key) \u2026"
+      },
+      "anomalies_180d": {
+        "exec_ms": 38.385,
+        "plan_ms": 0.072,
+        "buffers": 8078,
+        "rows": 350,
+        "plan": "Seq scan (signals)"
+      },
+      "sector_daily_1y_view": {
+        "exec_ms": 426.157,
+        "plan_ms": 0.972,
+        "buffers": 19865,
+        "rows": 1245,
+        "plan": "Seq scan (daily_prices), Seq scan (companies), Seq scan (sectors) \u2026"
+      },
+      "sector_daily_1y_matview": {
+        "exec_ms": 0.842,
+        "plan_ms": 0.027,
+        "buffers": 197,
+        "rows": 1245,
+        "plan": "Seq scan (mv_sector_daily)"
+      },
+      "sector_strength_latest": {
+        "exec_ms": 68.355,
+        "plan_ms": 0.896,
+        "buffers": 19866,
+        "rows": 5,
+        "plan": "Subquery Scan (), Index scan (sectors_sector_name_key), Seq scan (daily_prices) \u2026"
+      },
+      "freshness": {
+        "exec_ms": 66.52,
+        "plan_ms": 0.187,
+        "buffers": 3807,
+        "rows": 25,
+        "plan": "Seq scan (daily_prices), Seq scan (companies)"
+      }
+    }
+  }
+}
