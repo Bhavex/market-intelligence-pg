@@ -36,9 +36,10 @@ only need prices do not read signal columns. The FK with `ON DELETE CASCADE` gua
 its price.
 
 **5. Natural key or surrogate key for `companies`?**
-Natural: `ticker`. It is stable, short, and is what every source (Yahoo, NSE files) uses. When a symbol does change (the
-Tata Motors demerger), `replace_company()` deactivates the old row and inserts a new one, so history keeps its
-original key. Sectors and cities use `SMALLSERIAL` surrogates because their names are long and may be edited.
+Natural: `ticker`, for the price tables, because every source (Yahoo, NSE files) uses it. A ticker is not a stable
+identity, though, so `instruments` adds a surrogate `instrument_id`. `instrument_symbols` and `universe_membership`
+record which symbol and which universe applied on which dates. Tata Motors keeps its history with an end date and
+Hero MotoCorp gets a start date (`sql/18_instruments.sql`); `replace_company()` now maintains those intervals. Sectors and cities use `SMALLSERIAL` surrogates because their names are long and may be edited.
 
 **6. Why don't you ever DELETE a company?**
 Deleting would cascade into or orphan years of prices, and you would lose the history (a delete anomaly).
@@ -120,7 +121,7 @@ GitHub Actions at 17:10, 20:10 and 07:10 IST runs these steps:
 1. `setup_db.py` applies the idempotent schema.
 2. `daily_update.py` fetches the last 5 NSE sessions per stock, validates them (`validation.py`), upserts them, and calls
    `refresh_signals()`.
-3. `post_load.py` refreshes the materialized view and runs 10 quality checks.
+3. `post_load.py` refreshes the materialized view and runs 11 quality checks.
 4. `verify_52w.py` cross-checks the 52-week signals against pandas.
 
 Every job logs to `pipeline_runs`.
@@ -160,19 +161,24 @@ than half fail, the job exits non-zero and the Action turns red. `pipeline_run()
 
 **24. How do you validate data before it goes in?**
 `src/validation.py` runs before every insert in backfill, the daily update and the revision scan.
-- **Rejected:** missing OHLC, zero or negative prices, negative volume, `high < low`, duplicate ticker+date, and
-  isolated spikes (a move beyond ±20% that reverses the next session).
-- **Warning only:** persistent jumps, open/close outside the day's range, and gaps of 3+ NSE sessions.
+- **Rejected:** missing OHLC, zero or negative prices, negative volume, `high < low`, duplicate ticker+date.
+- **Suspect:** a move beyond ±20% against the last unflagged session, judged only on data up to that row.
+- **Warning only:** open/close outside the day's range, and gaps of 3+ NSE sessions.
 
 Rejected rows are logged and saved in `rejected_prices` with the raw row as JSONB, instead of aborting the load.
-Network or database errors still fail the ticker or the run. The spike rule used the *next* session's price, which
-makes it future-dependent; it is replaced by timestamped quality states (see `docs/DATA_LINEAGE.md`).
+Network or database errors still fail the ticker or the run. The old spike rule used the *next* session's price,
+which made the cleaned history depend on the future. It is replaced by timestamped quality states in the append-only
+`quality_states` table: a suspect row becomes rejected or accepted on a *later* run, and the earlier state stays
+recorded (see `docs/DATA_LINEAGE.md`).
 
-**25. Why reject a spike but keep a jump of the same size?**
-A one-day move that immediately reverses is the signature of a bad tick. A move that persists may be real news, like
-results or a block deal, and deleting real data is worse than flagging it. The check uses `adj_close`, so splits and
-dividends do not look like jumps. It compares with the last *accepted* price, so one rejection cannot cascade into
-rejecting every later day.
+**25. Why is a spike only "suspect" at first, and rejected later?**
+A one-day move that immediately reverses is the signature of a bad tick; a move that persists may be real news, like
+results or a block deal. On the day the row arrives you cannot tell which, because the next session does not exist
+yet. So the row is stored as `suspect`, and a backtest decision taken that day ignores it. On the next run, with the
+next session in hand, the row becomes `rejected` (reversed) or `accepted` (persisted). Both states are kept with their
+timestamps, so a replay of any past day sees only what was known then (`quality_as_of(ts)`). The check uses
+`adj_close`, so splits and dividends do not look like jumps, and a suspect row is never used as the reference for the
+next one, so one bad tick cannot flag the following days.
 
 **26. What if Yahoo changes a price after you stored it?**
 The next run's 5-session window overwrites it with Yahoo's latest value (only inside that window), and the weekly

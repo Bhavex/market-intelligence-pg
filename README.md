@@ -33,7 +33,10 @@ project at VIT Vellore.
 - **Honest backtest on real Neon data (May 2015 – Nov 2026):** after 11.2 bp NSE costs, momentum returns **9.6%** a
   year and sector rotation **10.2%**, against **12.5%** for equal-weight buy-and-hold (Sharpe 0.60 and 0.59 vs 0.89).
   Neither signal beats the benchmark ([BACKTEST.md](docs/BACKTEST.md)).
-- **267 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
+- **Point-in-time research foundations:** a fetch ledger, append-only price observations with an as-of query,
+  timestamped quality states instead of future-dependent cleaning, dated universe membership, and NSE bhavcopy
+  reconciliation in both file formats ([DATA_LINEAGE.md](docs/DATA_LINEAGE.md), [RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md)).
+- **353 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
   a throwaway PostgreSQL 17 container.
 
 > **Scope.** End-of-day data, not a real-time feed. Educational analytics, not investment advice.
@@ -56,7 +59,7 @@ flowchart LR
         F["fetch last 5 NSE sessions<br/>prices.py"] --> V["validate rows<br/>validation.py"]
         V --> U["idempotent UPSERT<br/>daily_prices"]
         U --> R["refresh_signals()<br/>PL/pgSQL window functions"]
-        R --> Q["REFRESH MATERIALIZED VIEW<br/>10 data-quality checks"]
+        R --> Q["REFRESH MATERIALIZED VIEW<br/>11 data-quality checks"]
         Q -->|failure| AL["open / update GitHub issue<br/>pipeline_alert.py"]
     end
 
@@ -271,7 +274,9 @@ All tables are in BCNF, with one controlled redundancy (`cities.region`, kept co
 | **Pharma** | `SUNPHARMA.NS` Sun Pharma · `DRREDDY.NS` Dr. Reddy's · `CIPLA.NS` Cipla · `DIVISLAB.NS` Divi's Laboratories · `LUPIN.NS` Lupin |
 | **FMCG** | `HINDUNILVR.NS` Hindustan Unilever · `ITC.NS` ITC · `NESTLEIND.NS` Nestlé India · `BRITANNIA.NS` Britannia · `DABUR.NS` Dabur India |
 
-`TATAMOTORS.NS` was replaced after the Tata Motors demerger broke the symbol (`replace_company()` procedure).
+Tata Motors (`TATAMOTORS.NS`) was in the Auto sector until the demerger broke its symbol; Hero MotoCorp joined in its
+place. Both are kept in `universe_membership` with dates (Tata with an end date, Hero with a start date), and the
+backtest uses the members as they were on each date ([DATA_LINEAGE.md](docs/DATA_LINEAGE.md) §6).
 A separate research universe (NIFTY 50 + 25 small caps, `companies.in_dashboard = FALSE`) is used only by the data-trust
 study and never reaches the dashboards.
 
@@ -357,13 +362,18 @@ skipped instead of aborting the load. Network or database failures still fail th
 | zero or negative price, negative volume | reject |
 | `high < low` | reject |
 | duplicate `(ticker, date)` in one fetch | reject the second |
-| **isolated spike**: a move beyond ±20% that reverses the next session | reject |
-| persistent jump beyond ±20% (not reversed: could be real news) | keep, warn |
+| move beyond ±20% against the last unflagged session | keep, state **suspect** |
+| a suspect move reversed by the next session (decided on that later run) | state becomes **rejected**; the earlier state stays recorded |
+| a suspect move that persisted | state becomes **accepted** |
 | open/close outside the day's range (more than 0.1%) | keep, warn |
 | 3+ missing NSE sessions between rows (holiday-aware) | warn |
 
-**After load: `src/post_load.py`.** 10 SQL checks: freshness against the NSE calendar, calendar gaps, impossible prices,
-high < low, signal coverage, close outside range, extreme moves, zero volume, and recent validation rejections.
+Every decision is a timestamped row in the append-only `quality_states`. Nothing about day *t* is decided using day
+*t+1* at the time *t* is loaded ([DATA_LINEAGE.md](docs/DATA_LINEAGE.md) §2).
+
+**After load: `src/post_load.py`.** 11 SQL checks: freshness against the NSE calendar, calendar gaps, impossible prices,
+high < low, signal coverage, close outside range, extreme moves, zero volume, writes without a recorded observation,
+and recent validation rejections.
 **In the schema:** CHECK constraints, foreign keys and triggers reject the specific impossible values they encode,
 such as non-positive prices, `high < low` and RSI outside 0–100. Wrong-but-plausible values are still storable
 (see [docs/MIGRATION_NOTES.md](docs/MIGRATION_NOTES.md)).
@@ -413,14 +423,16 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-There are **267 tests**. Without a database, 218 run and 49 database tests skip by design:
+There are **353 tests**. Without a database, 283 run and 70 database tests skip by design:
 - **No database and no internet needed** for most of them. `tests/conftest.py` fakes the psycopg connection and
   `yfinance.Ticker`. The suite covers:
   - validation, signal maths, upsert counting and the session guard;
   - the backfill and daily jobs end to end;
   - every dashboard page, rendered with Streamlit's `AppTest` in demo mode;
   - every API endpoint and error;
-  - the backtest's look-ahead, lag and cost rules;
+  - the backtest's look-ahead, lag and cost rules, quality masking as known at each decision, and dated membership;
+  - quality-state transitions, the fetch ledger, observations and revision capture;
+  - both bhavcopy parsers on fixture files, and every reconciliation class;
   - the failure-alert script.
 - **SQL tests** run when `TEST_DATABASE_URL` points at a **throwaway** database. They cover `refresh_signals()` against
   an independent pandas engine, every constraint and view, the Power BI column contract, and live-mode API calls. They
@@ -450,11 +462,15 @@ suite.
 | `api/` | FastAPI service (`main.py`, `schemas.py`) |
 | `marketintel/` | shared read-only data source (`datasource.py`) and synthetic price generator (`sample.py`) |
 | `src/strategy_backtest.py`, `src/perf_study.py` | signal backtest; `EXPLAIN ANALYZE` index study |
+| `src/fetch_config.py`, `ledger.py`, `observations.py`, `quality.py` | fetch settings and price basis, fetch ledger, append-only observations, timestamped quality states |
+| `src/revision_capture.py`, `bhavcopy.py`, `reconcile.py` | prospective revision capture; legacy and UDiFF bhavcopy parsers; bhavcopy vs Yahoo reconciliation |
+| `sql/13` … `19` | price semantics, quality states, fetch ledger, observations and selection, revision capture, instruments and membership, reconciliation |
 | `scripts/` | `load_sample_data.py` / `build_demo_data.py` (throwaway databases only), `docker_init.py`, `pipeline_alert.py` |
 | `Dockerfile`, `docker-compose.yml` | one-command local stack |
+| `.github/workflows/` | **scheduled:** `daily_update` (3× per trading day, with failure alerts), `revision_capture` (weekdays 22:53 IST), `benchmark`, `weekly_fundamentals` and `trust_study` (weekly). **After another workflow:** `site` (after the daily update or the trust study). **Manual:** `backfill`, `backtest` (real data), `reconcile` (NSE bhavcopy), `dataset`. **On every push:** `tests` |
 | `tests/` | pytest suite (mocked) and SQL integration tests |
 | `demo/viva_queries.sql`, `demo/transactions_demo.sql` | demo queries (joins, CTEs, window functions) and an ACID / isolation demo |
-| `docs/` | [API](docs/API.md), [BACKTEST](docs/BACKTEST.md), [PERFORMANCE](docs/PERFORMANCE.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [RESUME](docs/RESUME.md), [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
+| `docs/` | [DATA_LINEAGE](docs/DATA_LINEAGE.md), [RESEARCH_PLAN](docs/RESEARCH_PLAN.md), [CLAIMS](docs/CLAIMS.md), [API](docs/API.md), [BACKTEST](docs/BACKTEST.md), [PERFORMANCE](docs/PERFORMANCE.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [RESUME](docs/RESUME.md), [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
 | `AUDIT.md` | ranked audit of bugs, risks and fixes |
 | `site/` | static dashboard (Chart.js + Leaflet) |
 
@@ -472,9 +488,14 @@ suite.
 | Roles and least privilege | `readonly_access` |
 | Transactions, savepoints, isolation levels | `demo/transactions_demo.sql` |
 | Temporal (bitemporal) tables, GiST exclusion constraint, time travel | `sql/08_point_in_time.sql` |
+| Append-only tables enforced by triggers, generated columns, as-of functions | `sql/14`–`19` (`forbid_mutation()`, `price_observations.value_hash`, `observations_as_of`, `quality_as_of`) |
+| Valid-time intervals with exclusion constraints on `daterange` | `sql/18_instruments.sql` (`universe_membership`, `instrument_symbols`) |
 
 ## Known limitations
 
+- **Point-in-time only from deployment.** Observations, the fetch ledger and quality states start when this design
+  was deployed. Older history has no first-print values. The backtest's price values are still today's revised
+  values (see [DATA_LINEAGE.md](docs/DATA_LINEAGE.md)).
 - **Single free data source.** Yahoo Finance is unofficial. The research layer measures how often it disagrees with
   official NSE/BSE closes ([docs/TRUST.md](docs/TRUST.md)), but the dashboard still relies on it.
 - **End of day only**, and today's bar appears only after 16:30 IST.

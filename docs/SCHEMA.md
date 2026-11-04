@@ -180,8 +180,8 @@ Rows refused by `src/validation.py` before insert.
 | `run_id` | BIGINT, FK → `pipeline_runs` ON DELETE SET NULL | the job that rejected it |
 | `ticker` | VARCHAR(20) | |
 | `price_date` | DATE | NULL for malformed rows |
-| `check_name` | VARCHAR(40) | `missing_value`, `non_positive_price`, `negative_volume`, `high_below_low`, `duplicate_ticker_date`, `price_spike`, `malformed_row` |
-| `detail` | TEXT | e.g. `+50.0% then -32.0% next session (isolated spike)` |
+| `check_name` | VARCHAR(40) | `missing_value`, `non_positive_price`, `negative_volume`, `high_below_low`, `duplicate_ticker_date`, `malformed_row` (rows from before validation v3 may also say `price_spike`; spikes are now quality states) |
+| `detail` | TEXT | e.g. `high 401.2 < low 405.0` |
 | `raw_row` | JSONB | the row as received |
 | `rejected_at` | TIMESTAMPTZ | |
 
@@ -234,6 +234,101 @@ Output of `src/fragility.py` (how often simulated data errors flip each signal).
 - `fragility_results`: PK `(frag_run_id, universe, scenario, signal)`; `n_compared`, `n_flipped` (CHECK
   `n_flipped <= n_compared`), `flip_rate`, Wilson `ci_low`/`ci_high`, bootstrap `boot_low`/`boot_high`.
 - `backtest_sensitivity`: PK `(frag_run_id, scenario, metric)`, `value`.
+
+## Lineage and point-in-time layer (`sql/13`–`19`)
+
+Design and rationale: [DATA_LINEAGE.md](DATA_LINEAGE.md). The tables marked *append-only* reject `UPDATE` and
+`DELETE` through the `forbid_mutation()` trigger.
+
+### `fetch_settings` (`13_price_semantics.sql`)
+| Column | Type | Meaning |
+|---|---|---|
+| `settings_id` | BIGSERIAL PK | |
+| `settings_hash` | CHAR(64) UNIQUE | SHA-256 of the settings below; one row per distinct settings set |
+| `source`, `library`, `library_version` | VARCHAR | `yahoo`, `yfinance`, the installed version |
+| `interval` | VARCHAR(8) | `1d` or `1h` |
+| `params` | JSONB | every `history()` flag passed (`auto_adjust`, `repair`, `actions`, …) |
+| `close_basis`, `adj_close_basis` | VARCHAR(32), CHECK | `unadjusted` / `split_adjusted` / `split_and_dividend_adjusted` |
+| `first_used_at`, `last_used_at` | TIMESTAMPTZ | |
+
+`daily_prices.settings_id` and `pipeline_runs.settings_id` (nullable FKs, appended columns) say which settings wrote
+a row or ran a job.
+
+### `quality_states` (`14_quality_states.sql`, append-only)
+| Column | Type | Meaning |
+|---|---|---|
+| `state_id` | BIGSERIAL PK | |
+| `ticker`, `price_date` | FK → `companies`, DATE | the stock-day judged |
+| `state` | CHECK `provisional` / `suspect` / `accepted` / `rejected` | |
+| `reason` | VARCHAR(40) | e.g. `jump_vs_reference`, `reversed_next_session`, `jump_persisted`, `reconfirmed_by_later_fetch`, `revised_value` |
+| `rule_version` | VARCHAR(16) | `quality-v2` |
+| `close`, `adj_close` | NUMERIC(14,4) | the value judged |
+| `evidence` | JSONB | moves, next date, re-fetched value |
+| `decided_at` | TIMESTAMPTZ, default `clock_timestamp()` | when the decision was made |
+| `run_id` | BIGINT | |
+| `observation_id` | FK → `price_observations` | added by `16` |
+
+### `fetch_log` (`15_fetch_ledger.sql`, append-only)
+| Column | Type | Meaning |
+|---|---|---|
+| `fetch_id` | BIGSERIAL PK | |
+| `run_id`, `job_name` | | the job that fetched |
+| `source`, `endpoint`, `symbol` | VARCHAR | e.g. `yahoo`, `history:1d`, `INFY.NS`; `nse`, `bhavcopy:udiff_cm`, `ALL` |
+| `request` | JSONB | every request parameter, including the flags |
+| `retrieved_at` | TIMESTAMPTZ | |
+| `response_sha256`, `hash_basis` | CHAR(64), CHECK | `raw_bytes` (bhavcopy) or `canonical_frame_csv` (yfinance hands back a parsed frame) |
+| `response_bytes` | BIGINT | size of raw responses |
+| `rows_returned`, `rows_parsed`, `rows_valid`, `rows_rejected`, `rows_suspect`, `rows_held_back` | INTEGER ≥ 0 | |
+| `library`, `library_version`, `settings_id` | | |
+| `parser_version`, `validation_rule_version`, `quality_rule_version` | VARCHAR(40) | e.g. `yahoo-history-parser-v3`, `validation-v3`, `quality-v2`, `bhavcopy-parser-v1` |
+| `status` | CHECK `ok` / `empty` / `error` / `parse_error` / `not_published` / `blocked` | |
+| `error` | TEXT | |
+| `logged_at` | TIMESTAMPTZ | |
+
+### `price_observations` (`16_price_observations.sql`, append-only)
+| Column | Type | Meaning |
+|---|---|---|
+| `observation_id` | BIGSERIAL PK | |
+| `fetch_id` | FK → `fetch_log` | the request that returned it |
+| `ticker`, `price_date`, `source` | | `yahoo_daily` / `yahoo_hourly` |
+| `open` … `volume` | as `daily_prices` | the values seen (rows later rejected included) |
+| `close_basis`, `adj_close_basis` | VARCHAR(32) | |
+| `observed_at` | TIMESTAMPTZ | retrieval time |
+| `value_hash` | CHAR(64), **generated** from the six values by `price_value_hash()` | used to skip unchanged re-fetches and to link selections |
+| `recorded_at` | TIMESTAMPTZ | |
+
+### `price_selection` (`16_price_observations.sql`, append-only, written by a trigger on `daily_prices`)
+`selection_id` PK · `ticker`, `price_date` · `action` (`insert` / `update` / `delete`) · `observation_id` (FK; NULL
+when the write matched no observation) · `source` · `value_hash` · `selected_at` · `run_id`.
+
+### `revision_captures`, `revision_capture_coverage` (`17_revision_capture.sql`)
+- `revision_captures` (append-only): `capture_id` PK · `run_id` · `fetch_id` · `ticker` · `price_date` · `sample`
+  (`recent` / `rotating`) · `kind` (`value_changed` / `missing_in_feed` / `new_in_feed`) · `field` · `stored_value` ·
+  `fetched_value` · `rel_diff` · `stored_loaded_at` · `detected_at`.
+- `revision_capture_coverage`: PK `(run_id, ticker, sample)` · `window_start`, `window_end` · `rows_compared`,
+  `rows_differing` · `fetch_id` · `checked_at`.
+
+### `instruments`, `instrument_symbols`, `universe_membership` (`18_instruments.sql`)
+- `instruments`: `instrument_id` SERIAL PK · `isin` UNIQUE · `name` · `exchange` · `created_at`.
+  `companies.instrument_id` (appended FK) links each ticker to its instrument.
+- `instrument_symbols`: PK `(vendor, symbol, valid_from)` · `instrument_id` · `vendor` (`yahoo` / `nse` / `bse`) ·
+  `series` · `valid_from`, `valid_to` · `evidence`. GiST exclusion: the same symbol never maps to two intervals that
+  overlap.
+- `universe_membership`: PK `(universe, instrument_id, valid_from)` · `sector_id` · `valid_from`, `valid_to` · `reason` ·
+  `evidence`. GiST exclusion: an instrument's membership of a universe never overlaps itself.
+
+### `reconciliation_results` (`19_bhavcopy_reconciliation.sql`, append-only)
+`recon_id` PK · `run_id` · `fetch_id` · `trade_date` · `instrument_id` · `ticker` · `nse_symbol` · `series` · `isin` ·
+`bhav_format` (`legacy_cm` / `udiff_cm`) · `bhav_close`, `bhav_last`, `bhav_prev_close`, `bhav_low`, `bhav_high`,
+`bhav_volume` · `yahoo_close`, `yahoo_volume` · `yahoo_close_basis`, `bhav_close_basis` · `matched_by`
+(`symbol_series` / `isin`) · `classification` (see DATA_LINEAGE §7) · `diff_bp` · `detail` · `reconciled_at`.
+
+### New views and functions
+`v_price_semantics`, `v_quality_current`, `v_quality_summary`, `quality_as_of(ts)`, `v_fetch_summary`,
+`observations_as_of(ts)`, `selected_prices_as_of(ts)`, `v_observation_revisions`, `v_selection_provenance`,
+`v_revision_capture_summary`, `v_revision_capture_rate`, `universe_members(universe, date)`, `v_universe_membership`,
+`v_tata_hero_switch`, `v_reconciliation_latest`, `v_reconciliation_summary`, `price_value_hash(...)`,
+`forbid_mutation()`.
 
 ## Views
 

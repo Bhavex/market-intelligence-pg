@@ -35,7 +35,8 @@ Code: `src/strategy_backtest.py` · tests: `tests/test_strategy_backtest.py` (16
 | **Daily drift** | Between rebalances, weights drift with each stock's daily return; turnover is measured against the drifted weights, not the targets. |
 | **Warm-up** | Signals need 60 sessions of history, so the first trade is on **4 May 2015**. All four series start that day, so they are compared over the same period. |
 | **Revised data** | The price history is the database's *current* values, so `adj_close` already includes later dividend and split rescaling, and any later Yahoo corrections. Decision timing has no look-ahead; the data is not point-in-time. |
-| **Survivorship** | Not removed. The universe is *today's* 25 large caps (`TATAMOTORS.NS` was replaced after its demerger), which flatters every strategy, the benchmark included, by roughly the same amount. |
+| **Survivorship** | The Neon run below used *today's* 25 large caps, which flatters every strategy, the benchmark included, by roughly the same amount. The engine now supports dated membership (`universe_membership`: Tata Motors until its demerger, Hero MotoCorp after it); each decision uses the members on its date, and the benchmark hands a leaver's weight to the joiner. Re-run the workflow after deploying to get that version. |
+| **Data quality known at the time** | The engine masks rows whose quality state *at the decision time* was suspect or rejected (`quality_states`). States are recorded from deployment of the new design on; the Neon run below predates it. |
 | **Not modelled** | Bid-ask spread, market impact, capital-gains tax, cash yield (Sharpe ratios use a zero risk-free rate). |
 
 Metrics:

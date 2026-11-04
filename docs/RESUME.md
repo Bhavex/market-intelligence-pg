@@ -20,6 +20,8 @@ Shorter, for a projects list:
     dashboard universe, about 72,700 rows, plus a research universe).
   - Loaded three times every trading day by GitHub Actions, with pre-insert validation, idempotent upserts and 10
     data-quality gates.
+  - Every fetch is recorded in an append-only ledger. Every observed value is kept with an as-of query, and quality
+    decisions are timestamped, so history can be replayed as it was known.
   - Failed runs automatically open or update a GitHub issue.
 - **Built the signal engine inside the database:** one PL/pgSQL function using window functions computes momentum,
   RSI, SMA-50/200, volatility, volume z-scores and 52-week breakouts for every stock. In CI it agrees with an
@@ -34,7 +36,7 @@ Shorter, for a projects list:
   - weekly benchmarks on production show 131–573× gains (medians of 7 runs) from the primary-key, partial and
     materialized-view designs.
 - **Shipped a Streamlit dashboard and a read-only FastAPI service** on a shared data layer that runs queries in
-  read-only transactions, with a demo mode and a one-command Docker Compose stack. It is covered by 267 automated
+  read-only transactions, with a demo mode and a one-command Docker Compose stack. It is covered by 353 automated
   tests in CI on Python 3.12 and 3.13 against a PostgreSQL 17 container.
 
 **Optional fifth bullet (analytics roles):**
@@ -70,7 +72,7 @@ Shorter, for a projects list:
 > exciting answer, but the true one.
 >
 > On top of the database there is a Streamlit dashboard, a read-only FastAPI service, a Docker Compose setup that runs
-> everything with one command, and 267 automated tests.
+> everything with one command, and 353 automated tests.
 >
 > Code and write-ups: https://github.com/Bhavex/market-intelligence-pg
 >
@@ -83,11 +85,11 @@ Shorter, for a projects list:
 | 25 tickers, 5 sectors | `sql/02_seed.sql` |
 | ~212,500 price rows and as many signal rows (production, 81 stocks) | `docs/BENCHMARKS.md`, table sizes measured on Neon (212,507 rows each, 1 Nov 2026); see `docs/CLAIMS.md` §2 |
 | Three loads per trading day | `.github/workflows/daily_update.yml` schedule |
-| 10 data-quality checks | `CHECKS` in `src/post_load.py` |
+| 11 data-quality checks | `CHECKS` in `src/post_load.py` |
 | Signal engine agrees with pandas on all 640 synthetic test rows | `tests/test_db_integration.py::test_refresh_signals_matches_the_independent_pandas_engine` (trend, anomaly, breakout, RSI and momentum); agreement shows consistency, not correctness of the definitions |
 | ≈300×, 0.09 ms vs 27.6 ms; 233 → 0.19 ms; 19.2 → 0.63 ms | `docs/PERFORMANCE.md`; every individual run in `results/performance/production_scale_100_tickers.json` (local PostgreSQL 16, synthetic data, 100 tickers × 2,596 weekdays = 259,600 rows) |
 | 131–573× on production | `docs/BENCHMARKS.md` (Neon, PostgreSQL 17, median of 7 runs: primary key 131.5×, partial index 169×, materialized view 573×). Individual runs were not kept for that date; `benchmark.py` now saves them to `results/benchmarks/latest.json` |
-| 267 tests | `python -m pytest --collect-only -q` (218 run without a database) |
+| 353 tests | `python -m pytest --collect-only -q` (283 run without a database) |
 | 9.6% / 10.2% vs 12.5% CAGR, Sharpe 0.60 / 0.59 vs 0.89, 11.2 bp, May 2015 – Nov 2026 | **Real Neon data**: workflow run [41892962103](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41892962103), `results/backtest/summary_neon_2015-05_2026-11.csv`, `docs/BACKTEST.md` |
 
 The ≈300×, 233 ms and ≈30× figures come from synthetic data at production size on a local machine; the 131–573×
