@@ -8,7 +8,7 @@ rows were inserted, updated, unchanged or held back. Signals are recomputed afte
 from datetime import date
 
 from db import active_tickers, get_conn, pipeline_run
-from prices import fetch_rows_ex, upsert_rows
+from prices import _now, fetch_rows_ex, upsert_rows
 
 DEFAULT_START = date(2015, 1, 1)
 HEAL_SESSIONS = 5
@@ -35,13 +35,17 @@ def main():
         print(f"Re-upserting the last {HEAL_SESSIONS} trading sessions: from {heal_start}")
 
         with pipeline_run(conn, "daily_update") as run:
-            earliest_start = date.today()
+            earliest_start = _now().date()
             totals = dict(inserted=0, updated=0, unchanged=0, held_back=0)
             for t in tickers:
                 # normally heal_start; further back if the stored data is older than that (a missed gap)
                 start = min(heal_start, latest[t]) if t in latest else DEFAULT_START
                 try:
                     f = fetch_rows_ex(t, start)
+                    if not f.daily and not f.fallback and not f.held_back:
+                        run["tickers_failed"].append(t)
+                        print(f"{t}: FAILED (Yahoo returned no bars from {start})")
+                        continue
                     s = upsert_rows(conn, f.daily)
                     g = upsert_rows(conn, f.fallback, insert_only=True)    # approximate rows only fill gaps
                     inserted, updated = s.inserted + g.inserted, s.updated

@@ -5,7 +5,7 @@ import argparse
 from datetime import date
 
 from db import active_tickers, get_conn, pipeline_run
-from prices import fetch_rows, upsert_rows
+from prices import fetch_rows_ex, upsert_rows
 
 
 def main():
@@ -20,9 +20,13 @@ def main():
         with pipeline_run(conn, "backfill") as run:
             for i, t in enumerate(tickers, 1):
                 try:
-                    n = upsert_rows(conn, fetch_rows(t, start)).total
-                    run["rows_upserted"] += n
-                    print(f"[{i}/{len(tickers)}] {t}: {n} rows")
+                    f = fetch_rows_ex(t, start)
+                    s = upsert_rows(conn, f.daily)
+                    g = upsert_rows(conn, f.fallback, insert_only=True)
+                    n = s.total + g.total
+                    run["rows_upserted"] += s.written + g.written
+                    print(f"[{i}/{len(tickers)}] {t}: {n} rows ({s.written + g.written} written, "
+                          f"{len(f.fallback)} hourly fallback)")
                     if n == 0:
                         run["tickers_failed"].append(t)
                 except Exception as exc:

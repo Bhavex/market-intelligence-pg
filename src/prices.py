@@ -177,12 +177,6 @@ def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
     return Fetched([daily[d] for d in sorted(daily)], [fallback[d] for d in sorted(fallback)], held_back)
 
 
-def fetch_rows(ticker: str, start: date, retries: int = 3) -> list[tuple]:
-    """All rows (daily + hourly fallback) as one list; used by the one-time backfill."""
-    f = fetch_rows_ex(ticker, start, retries)
-    return sorted(f.daily + f.fallback, key=lambda r: r[1])
-
-
 def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,
                 source: str | None = None, intraday: bool = False) -> UpsertStats:
     """Upsert rows and report how many were inserted, updated (value changed) or unchanged.
