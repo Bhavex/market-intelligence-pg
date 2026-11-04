@@ -10,6 +10,7 @@ from datetime import date
 
 import fetch_config
 import ledger
+import observations
 import quality
 from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import FetchError, _now, fetch_rows_ex, upsert_rows
@@ -59,11 +60,12 @@ def main():
                         print(f"{t}: FAILED (Yahoo returned no bars from {start})")
                         continue
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
+                    observations.record_fetched(conn, f, checked.result, fetch_ids)
                     totals["rejected"] += len(checked.result.rejected)
                     s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
                     g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)    # approximate rows only fill gaps
                     quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
-                    ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
@@ -89,7 +91,10 @@ def main():
             summary = (f"prices: {totals['inserted']} inserted, {totals['updated']} updated, "
                        f"{totals['unchanged']} unchanged, {totals['held_back']} held back (session not final), "
                        f"{totals['rejected']} rejected by validation")
-            run["message"] = f"{summary}; {n_sig} signal rows refreshed; latest price date {max_date}"
+            lineage = {"ledger": ledger.FAILURES[0], "observations": observations.FAILURES[0], "quality": quality.FAILURES[0]}
+            lost = ", ".join(f"{k} {v}" for k, v in lineage.items() if v)
+            run["message"] = (f"{summary}; {n_sig} signal rows refreshed; latest price date {max_date}"
+                              + (f"; lineage write failures: {lost}" if lost else ""))
             print(summary)
             print(run["message"])
 

@@ -7,6 +7,7 @@ from datetime import date
 
 import fetch_config
 import ledger
+import observations
 import quality
 from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import FetchError, fetch_rows_ex, upsert_rows
@@ -34,11 +35,12 @@ def main():
                 try:
                     f = fetch_rows_ex(t, start)
                     checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "backfill", settings_daily, settings_hourly)
+                    observations.record_fetched(conn, f, checked.result, fetch_ids)
                     rejected += len(checked.result.rejected)
                     s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
                     g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)
                     quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
-                    ledger.record_fetch(conn, f, checked.result, run["run_id"], "backfill", settings_daily, settings_hourly)
                     n = s.total + g.total
                     run["rows_upserted"] += s.written + g.written
                     print(f"[{i}/{len(tickers)}] {t}: {n} rows ({s.written + g.written} written, "

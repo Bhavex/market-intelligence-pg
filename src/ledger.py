@@ -5,6 +5,7 @@ import fetch_config
 import quality
 import validation
 
+FAILURES = [0]
 log = logging.getLogger("market.ledger")
 
 INSERT_SQL = """
@@ -37,6 +38,7 @@ def write(conn, entries: list) -> list:
                 ids.append(row[0] if row else None)
             return ids
     except Exception as exc:
+        FAILURES[0] += 1
         log.warning("could not write %d fetch ledger row(s): %s", len(entries), exc)
         return []
 

@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
+FAILURES = [0]
 log = logging.getLogger("market.quality")
 
 RULE_VERSION = "quality-v2"
@@ -130,6 +131,7 @@ def record(conn, transitions: list, run_id=None) -> int:
                                               t.adj_close, json.dumps(t.evidence), run_id) for t in transitions])
         return len(transitions)
     except Exception as exc:
+        FAILURES[0] += 1
         log.warning("could not record %d quality state(s): %s", len(transitions), exc)
         return 0
 
