@@ -10,10 +10,12 @@ Usage:  python src/revision_scan.py                 # all active tickers, from 2
         python src/revision_scan.py INFY.NS --start 2024-01-01
 """
 import argparse
+import logging
 from datetime import date
 
 from db import active_tickers, get_conn, pipeline_run
 from prices import fetch_rows_ex, upsert_rows
+from validation import load_holidays, screen
 
 
 def main():
@@ -23,15 +25,18 @@ def main():
     args = ap.parse_args()
     start = date.fromisoformat(args.start)
 
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     with get_conn() as conn:
         tickers = args.tickers or active_tickers(conn)
+        holidays = load_holidays(conn)
         with pipeline_run(conn, "revision_scan") as run:
             earliest, updated, inserted = None, 0, 0
             for i, t in enumerate(tickers, 1):
                 try:
                     f = fetch_rows_ex(t, start)
-                    s = upsert_rows(conn, f.daily)
-                    g = upsert_rows(conn, f.fallback, insert_only=True)
+                    checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    s = upsert_rows(conn, checked.daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True)
                     updated += s.updated
                     inserted += s.inserted + g.inserted
                     if s.updated_dates:
