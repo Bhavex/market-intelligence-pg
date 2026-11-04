@@ -1,7 +1,8 @@
 """Fetch daily OHLCV from Yahoo Finance and upsert into daily_prices."""
+import hashlib
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
 
 import yfinance as yf
@@ -149,6 +150,41 @@ class Fetched:
     daily: list              # rows from Yahoo's daily candles (authoritative)
     fallback: list           # rows rebuilt from hourly bars for weekdays Yahoo's daily data lacks (approximate)
     held_back: int = 0       # valid bars not stored because the session is not final yet
+    requests: list = field(default_factory=list)
+
+
+PARSER_VERSION = "yahoo-history-parser-v3"
+
+
+@dataclass
+class FetchRecord:
+    symbol: str
+    interval: str
+    params: dict
+    retrieved_at: datetime
+    response_sha256: str
+    rows_returned: int
+    rows_parsed: int
+    status: str
+    error: str | None = None
+
+
+def frame_sha256(df) -> str:
+    if df is None or len(df) == 0:
+        return hashlib.sha256(b"").hexdigest()
+    body = df.reset_index().to_csv(index=False, float_format="%.17g", date_format="%Y-%m-%dT%H:%M:%S%z")
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _timed_history(ticker, retries, interval, **params):
+    retrieved_at = datetime.now(timezone.utc)
+    try:
+        df = _history(ticker, retries, interval=interval, **params)
+    except Exception as exc:
+        return None, FetchRecord(ticker, interval, params, retrieved_at, frame_sha256(None), 0, 0, "error",
+                                 f"{type(exc).__name__}: {exc}"[:500])
+    n = 0 if df is None else len(df)
+    return df, FetchRecord(ticker, interval, params, retrieved_at, frame_sha256(df), n, 0, "ok" if n else "empty")
 
 
 def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
@@ -162,20 +198,33 @@ def fetch_rows_ex(ticker: str, start: date, retries: int = 3) -> Fetched:
        These rows are approximate (first/last hourly price, summed hourly volume), so they are
        returned separately and must only fill gaps, never overwrite a stored row."""
     end = _now().date() + timedelta(days=2)
-    df = _history(ticker, retries, interval="1d", start=start.isoformat(), end=end.isoformat())
+    df, rec = _timed_history(ticker, retries, "1d", start=start.isoformat(), end=end.isoformat())
+    if rec.status == "error":
+        raise FetchError(rec)
     daily, held_back = _to_rows(ticker, df)
+    rec.rows_parsed = len(daily)
+    requests = [rec]
 
     recent_start = max(start, _now().date() - timedelta(days=30))
     wanted = {recent_start + timedelta(days=i) for i in range((_now().date() - recent_start).days + 1)}
     gaps = {d for d in wanted if d.weekday() < 5 and d not in daily and _session_finished(d)}
     fallback = {}
     if gaps:
-        try:
-            hourly = _history(ticker, retries, interval="1h", period="1mo")
-            fallback = {d: row for d, row in _rows_from_hourly(ticker, hourly).items() if d in gaps}
-        except Exception:
-            pass                                    # daily data already loaded; strict check will flag gaps
-    return Fetched([daily[d] for d in sorted(daily)], [fallback[d] for d in sorted(fallback)], held_back)
+        hourly, hrec = _timed_history(ticker, retries, "1h", period="1mo")
+        requests.append(hrec)
+        if hourly is not None and len(hourly):
+            try:
+                fallback = {d: row for d, row in _rows_from_hourly(ticker, hourly).items() if d in gaps}
+            except Exception as exc:
+                hrec.status, hrec.error = "parse_error", f"{type(exc).__name__}: {exc}"[:500]
+            hrec.rows_parsed = len(fallback)
+    return Fetched([daily[d] for d in sorted(daily)], [fallback[d] for d in sorted(fallback)], held_back, requests)
+
+
+class FetchError(RuntimeError):
+    def __init__(self, record: FetchRecord):
+        super().__init__(record.error or "fetch failed")
+        self.record = record
 
 
 def upsert_rows(conn, rows: list[tuple], insert_only: bool = False, commit: bool = True,

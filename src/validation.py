@@ -7,6 +7,7 @@ from typing import Iterable
 
 log = logging.getLogger("market.validation")
 
+RULE_VERSION = "validation-v3"
 REJECT = "reject"
 WARN = "warn"
 

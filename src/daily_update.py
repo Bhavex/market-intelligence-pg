@@ -9,9 +9,10 @@ import logging
 from datetime import date
 
 import fetch_config
+import ledger
 import quality
 from db import active_tickers, get_conn, pipeline_run, record_settings
-from prices import _now, fetch_rows_ex, upsert_rows
+from prices import FetchError, _now, fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
 
 DEFAULT_START = date(2015, 1, 1)
@@ -53,6 +54,7 @@ def main():
                 try:
                     f = fetch_rows_ex(t, start)
                     if not f.daily and not f.fallback and not f.held_back:
+                        ledger.record_fetch(conn, f, None, run["run_id"], "daily_update", settings_daily, settings_hourly)
                         run["tickers_failed"].append(t)
                         print(f"{t}: FAILED (Yahoo returned no bars from {start})")
                         continue
@@ -61,6 +63,7 @@ def main():
                     s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
                     g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)    # approximate rows only fill gaps
                     quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
+                    ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
@@ -75,6 +78,8 @@ def main():
                     print(f"{t}: inserted {inserted}, updated {updated}, unchanged {unchanged}{held}{fb}{bad} from {start}{note}")
                 except Exception as exc:
                     conn.rollback()
+                    if isinstance(exc, FetchError):
+                        ledger.record_error(conn, exc.record, run["run_id"], "daily_update", settings_daily)
                     run["tickers_failed"].append(t)
                     print(f"{t}: FAILED ({exc})")
 

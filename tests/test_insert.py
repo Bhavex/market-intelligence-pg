@@ -120,9 +120,10 @@ class TestFetch:
         frozen_now(NOW)
         t = FakeTicker(error=ConnectionError("yahoo down"))
         fake_yf["INFY.NS"] = t
-        with pytest.raises(ConnectionError):
+        with pytest.raises(prices.FetchError) as err:
             prices.fetch_rows_ex("INFY.NS", date(2026, 10, 1))
         assert len(t.calls) == 3
+        assert err.value.record.status == "error" and "ConnectionError" in err.value.record.error
 
 
 def pipeline_status(conn):
