@@ -323,7 +323,28 @@ when the write matched no observation) · `source` · `value_hash` · `selected_
 `bhav_volume` · `yahoo_close`, `yahoo_volume` · `yahoo_close_basis`, `bhav_close_basis` · `matched_by`
 (`symbol_series` / `isin`) · `classification` (see DATA_LINEAGE §7) · `diff_bp` · `detail` · `reconciled_at`.
 
+### `run_leases`, `run_lease_log` (`20_run_leases.sql`)
+`run_leases`: `lease_name` PK · `run_id` → `pipeline_runs` · `job_name` · `acquired_at` · `heartbeat_at` ·
+`expires_at` (NULL exactly when the lease is free). `run_lease_log` (append-only): `event_id` PK · `lease_name` · `run_id`
+· `event` (`acquired` / `released` / `taken_over` / `refused` / `reaped` / `lost`) · `at` · `detail`.
+`pipeline_runs.heartbeat_at` is added (nullable).
+
+### `calendar_coverage`, `trading_suspensions` (`21_session_coverage.sql`)
+`calendar_coverage`: `year` PK · `source` · `recorded_at`. It says which years `market_holidays` is complete for; 2026
+is seeded. `trading_suspensions`: `suspension_id` PK · `instrument_id` → `instruments` · `valid_from` · `valid_to`
+(exclusive, NULL = open) · `reason` · `source` · `recorded_at`.
+
+### `backtest_trials` (`22_backtest_trials.sql`, append-only)
+`trial_id` PK · `registered_at` · `run_tag` · `code_version` · `source` (`database` / `synthetic`) · `data_fingerprint`
+(sha256 of the price panel) · `data_start`, `data_end` · `strategy` · `params` JSONB · `period` (`full` /
+`development` / `holdout`) · `period_start`, `period_end` · `cost_level`, `cost_bp` · `n_obs` · `metrics` JSONB ·
+`purpose` (`cost_sensitivity` / `parameter_sweep` / `selected_on_development`) · `selected`.
+
 ### New views and functions
+`acquire_run_lease()`, `renew_run_lease()`, `release_run_lease()`, `reap_stale_runs()`, `v_run_leases`, `v_stale_runs`,
+`v_lease_holdings`, `v_lease_overlaps`, `session_final_at(d)`, `expected_sessions(from, to, universe)`,
+`session_coverage(from, to, universe, as_of, grace)`, `v_expected_sessions`, `v_session_coverage`,
+`v_session_coverage_summary`, `v_session_coverage_by_ticker`, `v_backtest_trial_counts`, `v_backtest_holdout_looks`,
 `v_price_semantics`, `v_quality_current`, `v_quality_summary`, `quality_as_of(ts)`, `v_fetch_summary`,
 `observations_as_of(ts)`, `selected_prices_as_of(ts)`, `v_observation_revisions`, `v_selection_provenance`,
 `v_revision_capture_summary`, `v_revision_capture_rate`, `universe_members(universe, date)`, `v_universe_membership`,

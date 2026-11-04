@@ -12,7 +12,8 @@ after realistic NSE trading costs, both signals trail an equal-weight buy-and-ho
 Momentum loses to buy-and-hold even before costs. The only rule that beats it is plain monthly rebalancing to equal
 weight (14.0% a year, Sharpe 0.98).
 
-Code: `src/strategy_backtest.py` · tests: `tests/test_strategy_backtest.py` (16) · results:
+Code: `src/strategy_backtest.py` on the ledger in `src/portfolio.py` · tests: `tests/test_strategy_backtest.py` (16),
+`tests/test_portfolio.py` (25 hand-calculated fixtures), `tests/test_backtest_rigour.py` (13) · results:
 `results/backtest/summary_neon_2015-05_2026-11.csv` · run: [Signal backtest (real data) #41892962103](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41892962103)
 
 ## Strategies
@@ -45,7 +46,8 @@ Metrics:
 - **Sharpe:** annualised mean ÷ annualised standard deviation.
 - **Max drawdown:** the worst peak-to-trough fall.
 - **Hit rate:** share of months the strategy beat the benchmark.
-- **Turnover:** sum of |Δweight| per year.
+- **Turnover:** rupees bought plus rupees sold, divided by the portfolio value at execution, summed per year (a full
+  switch is 2.0).
 
 ## Results: real Neon data, 4 May 2015 to 4 Nov 2026
 
@@ -126,3 +128,45 @@ can still mislead: on seed 7 alone sector strength *beats* buy-and-hold, purely 
 The project's signals are **descriptive analytics**: they show which sector is leading and which stocks are
 stretched. They are not a trading edge. On 11.5 years of real data, neither momentum nor sector rotation beat simply
 holding the 25 stocks, and monthly rebalancing did better than both.
+
+## Accounting: a share-and-cash ledger checked by hand
+
+Since the research-rigour branch, `simulate()` runs on `src/portfolio.py`. That ledger holds **shares and cash**, not
+weights:
+
+| Rule | What the ledger does |
+|---|---|
+| Execution | An order decided at the close of day *t* fills at the close of *t + lag* (default 1), or at a supplied open. A signal on the last session never fills. |
+| Costs | `cost_bp` on every rupee traded, each side. Sells are filled first; buys are funded only from the cash left after fees, so the portfolio never borrows. |
+| Splits and bonuses | On the ex-date (or the next session if it falls on a weekend), shares × ratio and the last price ÷ ratio, for `basis="unadjusted"`. `split_adjusted` prices skip them; `total_return` prices (`adj_close`, what the backtest uses) refuse explicit actions so nothing is counted twice. |
+| Dividends | Cash per share × shares held at the ex-date open, credited on the ex-date. Not paid on shares bought that day. |
+| Missing prices | A held stock with no close is valued at its last close. An order leg with no price stays open and fills on the next session that has one; other legs fill now. A sell that cannot fill does not fund a buy. After `max_open_sessions` (5) the leg is dropped. |
+
+Every number in `tests/test_portfolio.py` was worked out by hand before the test was run. Two examples:
+
+| Fixture | Hand calculation | Expected |
+|---|---|---|
+| Rebalance | ₹100 cash; A = 10, B = 10. Buy 5 A and 5 B. A doubles to 20, so NAV = 5·20 + 5·10 = 150. Rebalance to 75/75: sell 1.25 A (₹25), buy 2.5 B (₹25) | NAV 150; turnover 50 / 150 = 0.3333 |
+| 1% costs | Buy with ₹100 at 10: shares = 100 / 1.01 / 10 = 9.900990099. Sell at 12: 118.8118812 × 0.99 | NAV 117.6237624; fees 0.9900990 + 1.1881188 |
+
+The old weight-based engine gave the same results before costs. After costs it charged fees as a multiple of turnover,
+not on the rupees actually traded. On the 10-year synthetic panel the two engines differ by at most 0.02 pp CAGR, and
+the 20-seed study is unchanged to four decimals.
+
+## Rigour: costs, uncertainty, a holdout and a trial registry
+
+`python src/strategy_backtest.py --source db --rigour` (and the **Signal backtest (real data)** workflow) adds:
+
+| Output | What it is |
+|---|---|
+| `cost_sensitivity.csv` | Every strategy at **zero**, **realistic (11.2 bp)** and **high (41.2 bp)** one-way costs. "High" adds 30 bp for spread and impact, which the realistic schedule leaves out. Reported for the full, development and holdout periods. |
+| `turnover.csv` | Turnover per year, trade days, mean turnover per trade day, fees as % of mean NAV, and cost drag (CAGR before minus after costs). |
+| `bootstrap_ci.csv` | 95% moving-block bootstrap intervals (21-session blocks, 2,000 draws, fixed seed) for CAGR, Sharpe and max drawdown, plus **paired** intervals for excess CAGR and Sharpe over buy-and-hold, and the share of draws above zero. |
+| Chronological split | The final 3 years are the **holdout**. The parameter sweep (momentum: lookback 20/60/120 × top 3/5/8; sector strength: lookback 20/60 × top 1/2) is scored on the development period only. Only the parameters picked there are then evaluated on the holdout. A test shocks the holdout prices and checks that the picks do not change. |
+| `backtest_trials` | An append-only table with every evaluation ever run: strategy, parameters, period, cost level, data fingerprint, code version and metrics. `v_backtest_trial_counts` counts evaluations and holdout looks per strategy; `v_backtest_holdout_looks` lists each run that looked at the holdout. Without the table (local runs), the registry is `trial_registry.csv`. |
+| Deflated Sharpe probability | Bailey and López de Prado's correction, computed over all development-period trials of a strategy in the registry. More trials raise the bar. |
+| `rigour_summary.md` | The tables above, appended to the workflow's job summary. |
+
+The committed synthetic outputs are in `results/backtest/` (`rigour_summary.md` and friends). They are synthetic and
+show the format only. The Neon numbers above predate the ledger and the rigour suite; re-run the workflow for the
+current version.

@@ -71,14 +71,18 @@ The re-measured numbers on this branch replace the earlier medians in README and
 | Least-privilege read-only role | verified | `sql/05_audit_and_procedures.sql`; `tests/test_datasource.py::test_db_source_is_read_only`; `tests/test_powerbi_contract.py::test_readonly_role_can_still_read` |
 | Index speed-ups | measured locally | §3 |
 | Backtest on real Neon data: 9.6% / 10.2% vs 12.5% | verified | workflow run 41892962103; `results/backtest/summary_neon_2015-05_2026-11.csv` |
-| 353 tests (was 267), most without a database | verified | `python -m pytest --collect-only -q`: 283 run without a database, 70 need one |
+| 423 tests (was 353), most without a database | verified | `python -m pytest --collect-only -q`: 339 run without a database, 84 need one |
 | Dashboard has 5 pages and a demo mode | verified | `app/streamlit_app.py`; `tests/test_dashboard.py` |
 | API: one error envelope, write methods return 405, 34 tests | verified | `api/main.py`; `tests/test_api.py` |
 | Docker: one command, read-only login cannot write | verified locally on 4 Nov 2026 | PR #7 description (`permission denied` on `DELETE`) |
 | Hourly rows are insert-only | verified | `src/prices.py::INSERT_ONLY_SQL`; `tests/test_insert.py::test_hourly_fallback_is_insert_only` |
 | No partial bars before 16:30 IST | qualified (via `upsert_rows`) | `tests/test_pipeline.py::GuardFinalSessions` |
 | Every value change is versioned | qualified (normal DML; `TRUNCATE` bypasses row triggers) | `sql/08_point_in_time.sql` triggers |
-| 10 post-load checks | verified | `src/post_load.py::CHECKS` |
+| 12 post-load checks | verified | `src/post_load.py::CHECKS` |
+| Two pipeline runs never overlap | verified on PostgreSQL 16 locally and 17 in CI; not yet on Neon | `sql/20_run_leases.sql`; `tests/test_run_safety.py` (live overlap test, `v_lease_overlaps` = 0) |
+| A killed run loses and duplicates nothing | verified for SIGKILL before writes, mid-transaction and after commit | `tests/test_run_safety.py::test_killed_run_loses_and_duplicates_nothing` |
+| Backtest accounting verified by hand-calculated fixtures | verified | `tests/test_portfolio.py` |
+| Every backtest trial is registered | qualified: from deployment of `backtest_trials`; earlier runs are not in it | `sql/22_backtest_trials.sql`; `tests/test_backtest_rigour.py` |
 | SQL engine checked against pandas in CI and daily | qualified (§1) | `tests/test_db_integration.py`; `src/verify_52w.py` |
 | Tests never read `DATABASE_URL` / CI never touches production | verified | `tests.yml` sets its own service URL and has no secrets |
 
@@ -87,11 +91,11 @@ The re-measured numbers on this branch replace the earlier medians in README and
 | Claim | Status | Evidence |
 |---|---|---|
 | ~212,500 price rows "for 25 large caps" | **rewritten**: the rows are for 81 stocks (§2) | `docs/BENCHMARKS.md` |
-| Three loads per trading day, 11 quality gates (was 10), failure issues | verified | as README |
+| Three loads per trading day, 12 quality gates (was 11), failure issues | verified | as README |
 | Signal engine "matches pandas exactly" | **rewritten** (§1) | `tests/test_db_integration.py` |
 | ≈300×, 233 → 0.19 ms, 19.2 → 0.63 ms | measured locally; raw timings published (§3) | `results/performance/*.json` |
 | 131–573× on production | qualified: medians of 7 runs, raw runs not kept for that date (§3) | `docs/BENCHMARKS.md` |
-| 353 tests in CI on Python 3.12/3.13 + PostgreSQL 17 | verified | `.github/workflows/tests.yml` |
+| 423 tests in CI on Python 3.12/3.13 + PostgreSQL 17 | verified | `.github/workflows/tests.yml` |
 | Backtest bullet: "no look-ahead bias" | **rewritten** (§1) | `docs/BACKTEST.md` |
 
 ## 6. DEMO_DEFENCE claims
