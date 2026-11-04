@@ -49,13 +49,13 @@ def pipeline_run(conn, job_name: str):
     _CURRENT_RUN["id"] = run_id
     conn.commit()
     info = {"rows_upserted": 0, "tickers_failed": [], "message": None, "run_id": run_id}
+    status = "failed"
     try:
         yield info
         status = "partial" if info["tickers_failed"] else "success"
-    except Exception as exc:
+    except BaseException as exc:
         conn.rollback()
         info["message"] = f"{type(exc).__name__}: {exc}"[:2000]
-        status = "failed"
         raise
     finally:
         with conn.cursor() as cur:

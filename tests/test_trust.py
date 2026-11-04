@@ -144,7 +144,9 @@ class PointInTime(unittest.TestCase):
         self.assertEqual(kind[0][0], "intraday_as_close")      # first version stored before 16:30 IST
 
     def test_no_change_reload_creates_no_version(self):
-        t, d = self.q("SELECT ticker, price_date FROM daily_prices ORDER BY price_date LIMIT 1")[0]
+        t = self.q("SELECT ticker FROM companies ORDER BY ticker LIMIT 1")[0][0]
+        d = "2024-01-07"
+        self.q("INSERT INTO daily_prices (ticker, price_date, close, adj_close, volume) VALUES (%s, %s, 100, 100, 10)", t, d)
         before = self.q("SELECT COUNT(*) FROM price_versions WHERE ticker = %s AND price_date = %s", t, d)[0][0]
         self.q("UPDATE daily_prices SET close = close WHERE ticker = %s AND price_date = %s", t, d)
         after = self.q("SELECT COUNT(*) FROM price_versions WHERE ticker = %s AND price_date = %s", t, d)[0][0]

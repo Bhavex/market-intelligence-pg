@@ -272,7 +272,7 @@ def compare(f, base, pert, idx, leader_base=None, leader_pert=None, cluster=None
     cl = (np.asarray(cluster) if cluster is not None else
           pd.factorize(f["price_date"].values)[0])[idx]
     width = int(cl.max()) + 1 if len(cl) else 0
-    day_of = np.full(width, np.datetime64("NaT"), "datetime64[D]")      # the trading day of each cluster
+    day_of = np.full(width, np.datetime64("NaT", "D"), "datetime64[D]")      # the trading day of each cluster
     day_of[cl] = f["price_date"].values[idx].astype("datetime64[D]")
 
     def tally(sig, flipped, ok):

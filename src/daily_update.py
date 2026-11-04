@@ -5,10 +5,12 @@ Every run re-fetches and upserts the last HEAL_SESSIONS (5) trading sessions for
 Yahoo's final values on the next run without any manual edit. Today's bar is never stored
 before FINAL_AFTER (16:30 IST, i.e. 15:30 close + buffer; see prices.py). The log reports how many
 rows were inserted, updated, unchanged or held back. Signals are recomputed afterwards."""
+import logging
 from datetime import date
 
 from db import active_tickers, get_conn, pipeline_run
-from prices import fetch_rows_ex, upsert_rows
+from prices import _now, fetch_rows_ex, upsert_rows
+from validation import load_holidays, screen
 
 DEFAULT_START = date(2015, 1, 1)
 HEAL_SESSIONS = 5
@@ -26,8 +28,10 @@ HEAL_START_SQL = """
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     with get_conn() as conn:
         tickers = active_tickers(conn)
+        holidays = load_holidays(conn)
         latest = dict(conn.execute(
             "SELECT ticker, MAX(price_date) FROM daily_prices GROUP BY ticker"
         ).fetchall())
@@ -35,15 +39,21 @@ def main():
         print(f"Re-upserting the last {HEAL_SESSIONS} trading sessions: from {heal_start}")
 
         with pipeline_run(conn, "daily_update") as run:
-            earliest_start = date.today()
-            totals = dict(inserted=0, updated=0, unchanged=0, held_back=0)
+            earliest_start = _now().date()
+            totals = dict(inserted=0, updated=0, unchanged=0, held_back=0, rejected=0)
             for t in tickers:
                 # normally heal_start; further back if the stored data is older than that (a missed gap)
                 start = min(heal_start, latest[t]) if t in latest else DEFAULT_START
                 try:
                     f = fetch_rows_ex(t, start)
-                    s = upsert_rows(conn, f.daily)
-                    g = upsert_rows(conn, f.fallback, insert_only=True)    # approximate rows only fill gaps
+                    if not f.daily and not f.fallback and not f.held_back:
+                        run["tickers_failed"].append(t)
+                        print(f"{t}: FAILED (Yahoo returned no bars from {start})")
+                        continue
+                    checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    totals["rejected"] += len(checked.result.rejected)
+                    s = upsert_rows(conn, checked.daily)
+                    g = upsert_rows(conn, checked.fallback, insert_only=True)    # approximate rows only fill gaps
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
@@ -53,8 +63,9 @@ def main():
                         earliest_start = min(earliest_start, start)
                     note = f" (updated: {', '.join(map(str, s.updated_dates))})" if s.updated_dates else ""
                     held = f", held back {f.held_back} (session not final)" if f.held_back else ""
-                    fb = f", hourly fallback offered for {len(f.fallback)} gap day(s) (insert-only)" if f.fallback else ""
-                    print(f"{t}: inserted {inserted}, updated {updated}, unchanged {unchanged}{held}{fb} from {start}{note}")
+                    fb = f", hourly fallback offered for {len(checked.fallback)} gap day(s) (insert-only)" if checked.fallback else ""
+                    bad = f", rejected {len(checked.result.rejected)} by validation" if checked.result.rejected else ""
+                    print(f"{t}: inserted {inserted}, updated {updated}, unchanged {unchanged}{held}{fb}{bad} from {start}{note}")
                 except Exception as exc:
                     conn.rollback()
                     run["tickers_failed"].append(t)
@@ -64,7 +75,8 @@ def main():
             conn.commit()
             max_date = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]
             summary = (f"prices: {totals['inserted']} inserted, {totals['updated']} updated, "
-                       f"{totals['unchanged']} unchanged, {totals['held_back']} held back (session not final)")
+                       f"{totals['unchanged']} unchanged, {totals['held_back']} held back (session not final), "
+                       f"{totals['rejected']} rejected by validation")
             run["message"] = f"{summary}; {n_sig} signal rows refreshed; latest price date {max_date}"
             print(summary)
             print(run["message"])

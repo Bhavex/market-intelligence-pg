@@ -1,5 +1,7 @@
 # ER Diagram
 
+> Core entities only. The full, current schema (including `states`, `rejected_prices` and the research tables) is in [SCHEMA.md](SCHEMA.md).
+
 ```mermaid
 erDiagram
     SECTORS   ||--o{ COMPANIES     : "classifies"

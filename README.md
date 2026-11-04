@@ -1,190 +1,335 @@
-# NSE Sector Intelligence: a self-updating market database
+# Sector-Wise Market Intelligence & Signal Dashboard
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23495953.svg)](https://doi.org/10.5281/zenodo.23495953)
+[![Tests](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/tests.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/tests.yml)
 [![Daily market update](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/daily_update.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/daily_update.yml)
 [![Publish dashboard site](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml/badge.svg)](https://github.com/Bhavex/market-intelligence-pg/actions/workflows/site.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23495953.svg)](https://doi.org/10.5281/zenodo.23495953)
 
-**Live dashboard → https://bhavex.github.io/market-intelligence-pg/**
+**Live dashboard: https://bhavex.github.io/market-intelligence-pg/**
 
-A PostgreSQL database of 25 NSE large-cap stocks across 5 sectors (IT, Banking, Auto, Pharma, FMCG) that **updates itself every weekday after market close**: prices are loaded from Yahoo Finance, trading signals are computed *inside the database* with SQL window functions, data-quality checks run automatically, and a public dashboard is rebuilt — with zero manual work.
+A PostgreSQL database of **25 NSE large-cap stocks in 5 sectors** (IT, Banking, Auto, Pharma, FMCG) that **updates itself
+every weekday after the market closes**:
+
+1. prices are fetched from Yahoo Finance (`yfinance`);
+2. every row is **validated** before it is stored;
+3. the rows are upserted idempotently;
+4. trading signals are computed **inside the database** with SQL window functions;
+5. data-quality checks run, and the Excel / Power BI reports and the public dashboard read the result.
 
 Built as a DBMS course project at VIT Vellore.
 
-> **Scope:** end-of-day data (history from 2015 + daily updates), not a real-time feed. Educational analytics, not investment advice.
+> **Scope.** End-of-day data (history from 2015 plus daily updates), not a real-time feed. Educational analytics, not
+> investment advice.
+
+## Contents
+[Architecture](#architecture) · [Data model](#data-model) · [Stock universe](#stock-universe) · [Setup](#setup) ·
+[Pipeline behaviour](#pipeline-behaviour) · [Data quality](#data-quality) · [Signals](#signals) ·
+[Reporting views](#reporting-views-power-bi--excel) · [Testing](#testing) · [Repository layout](#repository-layout) ·
+[DBMS concepts](#dbms-concepts-demonstrated) · [Limitations](#known-limitations) · [Team](#team)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Y[Yahoo Finance] -->|Python, weekdays 5 PM IST| A[GitHub Actions]
-    A -->|UPSERT| DB[(PostgreSQL 17 on Neon)]
-    DB -->|refresh_signals: window functions| S[signals table]
-    DB --> Q[data-quality checks]
-    DB --> MV[materialized view]
-    MV --> E[export JSON]
-    E --> W[Public dashboard - GitHub Pages]
-    DB -->|read-only role| P[Power BI]
+    subgraph GH["GitHub Actions (weekdays 17:10, 20:10, next-day 07:10 IST)"]
+        S0["setup_db.py<br/>apply sql/*.sql (idempotent)"] --> F["prices.py<br/>fetch last 5 NSE sessions<br/>hold back unfinished bars"]
+        F --> V["validation.py<br/>reject bad rows, warn on gaps/jumps"]
+        V --> U["UPSERT daily_prices<br/>ON CONFLICT … WHERE IS DISTINCT FROM"]
+        U --> R["refresh_signals()<br/>PL/pgSQL + window functions"]
+        R --> Q["post_load.py<br/>REFRESH MATERIALIZED VIEW<br/>10 data-quality checks"]
+        Q --> C["verify_52w.py<br/>SQL vs pandas recomputation"]
+    end
+    Y[(Yahoo Finance)] --> F
+    V -. rejected rows .-> RJ[(rejected_prices)]
+    U --> DB[(PostgreSQL 17 on Neon)]
+    R --> DB
+    U -. triggers .-> AU[(audit_log + price_versions)]
+    DB -->|readonly_access role| PBI[Power BI / Excel]
+    DB -->|export_site.py| WEB[GitHub Pages dashboard]
+    T["tests.yml<br/>pytest on every push / PR"] -.-> GH
 ```
 
-## Highlights
+Three scheduled runs per trading day, because a delayed GitHub schedule or late Yahoo data must not cost a day. Every
+load is an upsert, so running it again is always safe. The 07:10 IST run is *strict*: if a trading day is still
+missing, the job fails and GitHub emails the owner.
 
-- **~73,000 price rows + ~73,000 signal rows**, loaded by an idempotent backfill and kept current by a scheduled pipeline
-- **Signal engine in SQL:** momentum, volatility, 50/200-day moving averages, RSI, volume z-score, 52-week high breakouts, trend and anomaly flags, all in one PL/pgSQL function using window functions and `INSERT … ON CONFLICT`
-- **Measured performance:** indexes, a partial index, a materialized view and year partitioning are benchmarked with `EXPLAIN ANALYZE` every week → [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
-- **Data-quality gate:** 9 automated checks (freshness, impossible prices, missing trading days, signal coverage…) fail the pipeline if data is bad
-- **Auditability:** triggers write every change to an `audit_log` (JSONB before/after), and every job logs itself in `pipeline_runs`
-- **Security:** least-privilege read-only role for analysts and Power BI; secrets only in GitHub Actions
-- **Sector-rotation backtest** (2015 to today) on the live dashboard
-- **Research layer: how much can you trust free market data?** A bitemporal `price_versions` table keeps every version of every price (temporal exclusion constraint, run-level provenance, `prices_as_of()` time travel), every revision is classified, Yahoo is reconciled against NSE/BSE official files, each price gets a trust score, and a validated simulation measures how often data errors flip each signal. Run on 81 stocks (56 large caps, i.e. every NIFTY 50 member plus the dashboard stocks outside it, and 25 small caps) and two Yahoo listings (NSE and BSE), with results by company size and an open, citable dataset → [docs/TRUST.md](docs/TRUST.md)
+## Data model
 
-## DBMS concepts used
+```mermaid
+erDiagram
+    SECTORS   ||--o{ COMPANIES     : classifies
+    STATES    ||--o{ CITIES        : contains
+    CITIES    |o--o{ COMPANIES     : "HQ of"
+    COMPANIES ||--o{ DAILY_PRICES  : has
+    COMPANIES ||--o{ FUNDAMENTALS  : "weekly snapshots"
+    DAILY_PRICES ||--o| SIGNALS    : "derives (1:1)"
+    COMPANIES ||--o{ PRICE_VERSIONS : "bitemporal history"
+    PIPELINE_RUNS |o--o{ REJECTED_PRICES : "rejected in"
 
-| Concept | Where |
+    SECTORS {
+        smallint sector_id PK
+        varchar  sector_name UK
+        varchar  nifty_index
+    }
+    STATES {
+        varchar state PK
+        varchar region
+    }
+    CITIES {
+        smallint city_id PK
+        varchar  city_name
+        varchar  state FK
+        varchar  region FK
+        numeric  latitude
+        numeric  longitude
+    }
+    COMPANIES {
+        varchar  ticker PK
+        varchar  company_name
+        smallint sector_id FK
+        smallint hq_city_id FK
+        boolean  is_active
+        boolean  in_dashboard
+    }
+    DAILY_PRICES {
+        varchar ticker PK, FK
+        date    price_date PK
+        numeric open
+        numeric high
+        numeric low
+        numeric close
+        numeric adj_close
+        bigint  volume
+        varchar source
+    }
+    SIGNALS {
+        varchar ticker PK, FK
+        date    signal_date PK, FK
+        numeric momentum_20d
+        numeric volatility_20d
+        numeric sma_50
+        numeric sma_200
+        numeric rsi_14
+        varchar trend
+        boolean is_anomaly
+        boolean breakout_52w
+    }
+    FUNDAMENTALS {
+        varchar ticker PK, FK
+        date    snapshot_date PK
+        numeric market_cap
+        numeric pe_ratio
+    }
+    PRICE_VERSIONS {
+        bigint      version_id PK
+        varchar     ticker FK
+        date        price_date
+        timestamptz sys_from
+        timestamptz sys_to
+    }
+    PIPELINE_RUNS {
+        bigint  run_id PK
+        varchar job_name
+        varchar status
+    }
+    REJECTED_PRICES {
+        bigint  rejection_id PK
+        bigint  run_id FK
+        varchar ticker
+        varchar check_name
+        jsonb   raw_row
+    }
+```
+
+All tables are in BCNF, with one controlled redundancy (`cities.region`, kept consistent by a composite FK to
+`states`). Every table and column is described in **[docs/SCHEMA.md](docs/SCHEMA.md)**; the normalisation steps are in
+[docs/NORMALISATION.md](docs/NORMALISATION.md), and the latest schema review is in
+[docs/MIGRATION_NOTES.md](docs/MIGRATION_NOTES.md).
+
+## Stock universe
+
+5 sectors × 5 large caps, Yahoo symbols with the `.NS` (NSE) suffix (`sql/02_seed.sql`):
+
+| Sector | Tickers |
 |---|---|
-| ER model → relational mapping, FDs, 1NF → BCNF, relational algebra | [docs/NORMALISATION.md](docs/NORMALISATION.md), [docs/ER_DIAGRAM.md](docs/ER_DIAGRAM.md) |
-| PK / FK / composite keys, CHECK / UNIQUE / NOT NULL | `sql/01_schema.sql` |
-| B-tree and partial indexes | `sql/01_schema.sql` |
-| Views and a materialized view | `sql/04_views.sql`, `sql/06_performance.sql` |
-| Stored function (PL/pgSQL, window functions, UPSERT) | `refresh_signals()` in `sql/03_signals.sql` |
-| Stored procedure (atomic multi-step change, row locking) | `replace_company()` in `sql/05_audit_and_procedures.sql` |
-| Triggers (AFTER audit, BEFORE validation, conditional `WHEN`) | `sql/05_audit_and_procedures.sql` |
-| Roles & privileges | `readonly_access` role in `sql/05_audit_and_procedures.sql` |
-| Transactions, savepoints, isolation levels | `demo/transactions_demo.sql` |
-| Query optimisation (`EXPLAIN ANALYZE`), partitioning | `src/benchmark.py` → [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
-| Temporal (bitemporal / system-versioned) tables, exclusion constraint with GiST, time-travel queries | `sql/08_point_in_time.sql` → [docs/TRUST.md](docs/TRUST.md) |
-| Data provenance & lineage (run-level), data fusion across sources | `sql/08_point_in_time.sql`, `sql/09_reconciliation.sql` |
-| Derived quality metadata (per-row trust score) | `sql/10_trust.sql` |
+| **IT** | `TCS.NS` Tata Consultancy Services · `INFY.NS` Infosys · `WIPRO.NS` Wipro · `HCLTECH.NS` HCL Technologies · `TECHM.NS` Tech Mahindra |
+| **Banking** | `HDFCBANK.NS` HDFC Bank · `ICICIBANK.NS` ICICI Bank · `SBIN.NS` State Bank of India · `KOTAKBANK.NS` Kotak Mahindra Bank · `AXISBANK.NS` Axis Bank |
+| **Auto** | `MARUTI.NS` Maruti Suzuki · `M&M.NS` Mahindra & Mahindra · `BAJAJ-AUTO.NS` Bajaj Auto · `EICHERMOT.NS` Eicher Motors · `HEROMOTOCO.NS` Hero MotoCorp |
+| **Pharma** | `SUNPHARMA.NS` Sun Pharma · `DRREDDY.NS` Dr. Reddy's · `CIPLA.NS` Cipla · `DIVISLAB.NS` Divi's Laboratories · `LUPIN.NS` Lupin |
+| **FMCG** | `HINDUNILVR.NS` Hindustan Unilever · `ITC.NS` ITC · `NESTLEIND.NS` Nestlé India · `BRITANNIA.NS` Britannia · `DABUR.NS` Dabur India |
 
-## Repository layout
+`TATAMOTORS.NS` was replaced after the Tata Motors demerger broke the symbol (`replace_company()` procedure).
+A separate research universe (NIFTY 50 + 25 small caps, `companies.in_dashboard = FALSE`) is used only by the data-trust
+study and never reaches the dashboards.
 
-| Path | What it is |
-|---|---|
-| `sql/01_schema.sql` | Tables, keys, constraints, indexes |
-| `sql/02_seed.sql` | Sectors, HQ cities (with lat/long), 25 companies |
-| `sql/03_signals.sql` | `refresh_signals(from_date)`: the signal engine |
-| `sql/04_views.sql` | Reporting views (`v_company_daily`, `v_latest_snapshot`, `v_sector_daily`, `v_sector_strength`, `v_region_daily`, `v_anomalies`, `v_pipeline_health`) |
-| `sql/05_audit_and_procedures.sql` | Audit log + triggers, validation trigger, `replace_company()` procedure, read-only role |
-| `sql/06_performance.sql` | Materialized view `mv_sector_daily` |
-| `src/setup_db.py` | Applies all SQL files (idempotent, runs before every load) |
-| `src/backfill.py` | One-time history load from 2015 |
-| `src/daily_update.py` | Incremental daily load (re-upserts the last 5 sessions) + signal refresh |
-| `src/post_load.py` | Refreshes the materialized view, runs data-quality checks |
-| `src/fundamentals.py` | Weekly fundamentals snapshot |
-| `src/verify_52w.py`, `sql/validation/52w_checks.sql` | Validation of the 52-week signals |
-| `src/dq_audit.py` | Data-quality audit: stored prices vs Yahoo |
-| `src/adya_snapshot.py`, `sql/analytics/` | Analytics report queries and a before/after comparison tool |
-| `tests/` | Unit tests for the price pipeline |
-| `src/benchmark.py` | `EXPLAIN ANALYZE` benchmarks → `docs/BENCHMARKS.md` |
-| `sql/08`–`sql/11`, `src/revision_scan.py`, `src/official_prices.py`, `src/fragility.py`, `src/trust_report.py` | Data-trust research layer (versions, official reconciliation, trust score, fragility) |
-| `src/universe.py`, `src/alt_feed.py`, `sql/11_research.sql` | Research universe (NIFTY 50 + 25 small caps), Yahoo BSE feed, results by group |
-| `src/export_dataset.py`, `CITATION.cff` | Open research dataset (derived data only) and citation |
-| `src/export_site.py` | Exports dashboard JSON + computes the backtest |
-| `site/` | Static dashboard (Chart.js + Leaflet), deployed to GitHub Pages |
-| `demo/viva_queries.sql` | 14 demo queries: joins, GROUP BY/HAVING, subqueries, window functions, CTEs |
-| `demo/transactions_demo.sql` | ACID demo: atomicity, constraints, savepoints, procedures, isolation |
-| `.github/workflows/` | Daily load, site publish, weekly benchmark, weekly fundamentals, weekly data trust study, dataset release, one-time backfill |
+## Setup
 
-## Signals
+### Prerequisites
+- Python 3.12+
+- A PostgreSQL 15+ database. A free [Neon](https://neon.tech) project works; production runs on Neon PostgreSQL 17.
 
-| Column | Meaning |
-|---|---|
-| `return_1d` | Daily return (fraction) |
-| `momentum_20d`, `momentum_60d` | 20 / 60 trading-day return |
-| `volatility_20d` | Annualised stdev of daily returns (20-day) |
-| `sma_50`, `sma_200` | Simple moving averages (SMA-200 is NULL until 200 days exist) |
-| `rsi_14` | 14-day RSI (simple-average version) |
-| `volume_zscore_20d` | Today's volume vs. the previous 20 days |
-| `trend` | `UP` if price > SMA50 > SMA200, `DOWN` if reverse, else `NEUTRAL` |
-| `is_anomaly` | Move > 3σ of the prior 20 days, or volume z-score > 3 |
-| `high_52w` | Highest `adj_close` of the **previous 252 trading days, today excluded** |
-| `breakout_52w` | `adj_close > high_52w` (a new 52-week high) |
-| `pct_from_52w_high` | `ROUND((adj_close / high_52w - 1) * 100, 2)` — **negative below the high, positive on a breakout day** (e.g. `-3.20` = 3.2% under the high, `+1.14` = 1.14% above it) |
-| `strong_breakout` | `breakout_52w` AND `volume_zscore_20d > 2` (a NULL z-score counts as FALSE) |
-
-Prices use `adj_close` (split/dividend-adjusted) when available.
-
-### 52-week signals: definitions and rules
-
-- **Why the high excludes today:** the window is `ROWS BETWEEN 252 PRECEDING AND 1 PRECEDING`. If today were
-  inside the window, today's close could never exceed its own maximum, so `breakout_52w` would be
-  impossible and `pct_from_52w_high` could never be positive. Comparing today with the *previous* 252 sessions
-  is what makes "new 52-week high" mean something. 252 trading days ≈ one year.
-- **NULL until there is enough history:** a row gets a value only if it has exactly 252 prior non-null
-  `adj_close` rows (`COUNT(adj_close) = 252` over the same window). Otherwise all four columns are NULL, so every
-  stock has 252 leading NULL rows (fewer or more only if `adj_close` itself has gaps: a missing `adj_close`
-  also blanks the next 252 rows). A row whose own `adj_close` is NULL is NULL too.
-- **Full history on every run:** Yahoo restates old `adj_close` after dividends, so the four columns are
-  recomputed over the *entire* `daily_prices` history of every ticker each time `refresh_signals()` runs
-  (about 70k rows, a few seconds), never only for new dates. Only rows whose values changed are written.
-  `strong_breakout` is computed after `volume_zscore_20d` in the same call.
-- **Rounding:** `breakout_52w` compares the unrounded values; `high_52w` and `pct_from_52w_high` are
-  rounded for display (2 decimals), so in a rare tie `adj_close > high_52w` on the rounded numbers can differ from the flag.
-- The columns are added by an idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `sql/01_schema.sql`.
-  `powerbi_reader` keeps `SELECT` on `signals` (the table-level grant to `readonly_access` covers new columns).
-
-## Run it yourself
-
+### Local
 ```bash
 git clone https://github.com/Bhavex/market-intelligence-pg.git
 cd market-intelligence-pg
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env          # paste a PostgreSQL connection string (e.g. a free Neon database)
-python src/setup_db.py        # tables, seed data, functions, triggers, views
-python src/backfill.py        # load history from 2015
-python src/post_load.py       # materialized view + data-quality checks
+pip install -r requirements-dev.txt
+cp .env.example .env
 ```
+Put your connection string in `.env` as `DATABASE_URL=…`. `.env` is git-ignored; never commit it.
 
-For automation, add the connection string as the GitHub Actions secret `DATABASE_URL`, then run **One-time setup and backfill** from the Actions tab. To publish the dashboard, set **Settings → Pages → Source** to **GitHub Actions**.
+```bash
+python src/setup_db.py
+python src/backfill.py --start 2015-01-01
+python src/post_load.py
+```
+`setup_db.py` creates tables, seed data, functions, triggers and views (safe to run again). `backfill.py` loads history
+and computes signals. `post_load.py` refreshes the materialized view and runs the data-quality checks.
 
-## Daily update behaviour
+### Automation (GitHub Actions)
+1. **Settings → Secrets and variables → Actions**: add `DATABASE_URL`. It is the only secret; the code never prints it.
+2. Run **One-time setup and backfill** from the Actions tab.
+3. **Settings → Pages → Source = GitHub Actions** to publish the dashboard.
 
-`src/daily_update.py` runs after the close and is built so that a wrong row corrects itself:
+From then on `daily_update.yml` runs by itself. `tests.yml` runs the test suite on every push and pull request and
+never touches the production database.
 
-- **Re-upserts the last 5 NSE trading sessions for every ticker on every run**
-  (`ON CONFLICT (ticker, price_date) DO UPDATE`; the 5 sessions come from the trading calendar in
-  `sql/07_trading_calendar.sql`, not 5 calendar days). If a ticker's stored data is older than that window it
-  fetches back to its last stored date. Only rows whose values changed are rewritten (and audited).
-- **Never stores a partial same-day bar:** today's bar is held back until **16:30 IST** (15:30 close + 1 hour buffer;
-  the same cut-off as `expected_latest_trading_day()`). A run at 09:40 stores nothing for today.
-- **Logs what it did:** per ticker and in total — rows *inserted*, *updated* (value changed, with the dates),
-  *unchanged* and *held back* (session not final). `pipeline_runs.rows_upserted` counts rows actually written and
-  `pipeline_runs.message` carries the breakdown.
-- **Hourly fallback is insert-only:** when Yahoo's daily series lacks a weekday, a row is rebuilt from hourly bars. Those
-  rows are approximate (close is right, but open/high/low can be slightly off and the summed volume can be 20–50% low)
-  so they only fill a gap and can never overwrite a stored row; Yahoo's daily bar replaces them if it appears later.
-
-Tools (all read-only except the tests' rolled-back transactions):
-
-| Command | Purpose |
-|---|---|
-| `python src/verify_52w.py` | Checks the 52-week signals (SQL checks in `sql/validation/52w_checks.sql` + an independent pandas recomputation); runs in the daily workflow |
-| `python src/dq_audit.py` | Stored prices vs Yahoo for the last 10 sessions, all tickers: >0.5% differences, rows on weekends/holidays, missing trading days, identical consecutive closes, rows written before the close |
-| `python src/adya_snapshot.py --tag before` / `--compare before after` | Saves/compares the results of the analytics report's queries 3a, 3b, 3c, 5 (`sql/analytics/person_b_queries.sql`) |
-| `TEST_DATABASE_URL=... python -m unittest discover -s tests -v` | Unit tests; DB tests need a throwaway database and never read `DATABASE_URL` |
-
-## Reporting views
-
-| View | Notes |
-|---|---|
-| `v_company_daily` | One row per company per day: price + signals + sector + location |
-| `v_sector_daily` | Equal-weighted sector stats per day. Columns, in order: `price_date, sector_name, n_stocks, avg_return_1d, avg_momentum_20d, avg_volatility_20d, avg_rsi_14, n_uptrend, n_downtrend, n_anomalies`, then the new **`breakout_count`** (stocks with `breakout_52w` TRUE that day in the sector) and **`strong_breakout_count`** (those with `strong_breakout`), both `bigint`. |
-| `v_sector_strength` | Sector 20-day momentum vs the universe, ranked per day (unchanged) |
-
-`v_sector_daily` is changed with `CREATE OR REPLACE VIEW` and the new columns are appended at the end, so existing
-column names, order and types — and the `powerbi_reader` grants — are untouched. **Never `DROP` this view**: dropping it
-removes the grants and breaks `v_sector_strength`. The materialized copy `mv_sector_daily` keeps its original 10
-columns (a materialized view cannot be altered in place); read the new counts from `v_sector_daily`, or drop and recreate
-`mv_sector_daily` (and re-grant `SELECT` to `readonly_access`) if the site/Power BI should read them from the materialized copy.
-
-## Read-only access for teammates / Power BI
-
-Create the login **with SQL** (roles made in the Neon Console UI get admin rights):
-
+### Read-only login for Power BI
+Create it with SQL (roles made in the Neon console get admin rights):
 ```sql
-CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'choose-a-long-random-password-here';
+CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'choose-a-long-random-password';
 GRANT readonly_access TO powerbi_reader;
 ```
+
+## Pipeline behaviour
+
+| Rule | How |
+|---|---|
+| **Self-healing window** | every run re-fetches the last **5 NSE trading sessions** (from the trading calendar, not calendar days) and upserts them, so a wrong row is fixed by the next run. If a stock's data is older, it fetches back to its last stored date |
+| **No partial bars** | a session counts as final only after **16:30 IST** (15:30 close + 1 h). `guard_final_sessions()` refuses any earlier write, whatever the code path |
+| **Write only real changes** | `ON CONFLICT … DO UPDATE … WHERE (old) IS DISTINCT FROM (new)`: unchanged rows are not rewritten, audited or versioned |
+| **Approximate rows never overwrite** | if Yahoo's daily series misses a weekday, the day is rebuilt from hourly bars (`source = 'yahoo_hourly'`), **insert-only** |
+| **Failures are visible** | each job logs a `pipeline_runs` row (`success` / `partial` / `failed`). The Action goes red if more than half the stocks fail or a data-quality check errors |
+| **Provenance** | every value change is versioned in `price_versions` with the `run_id` that caused it |
+
+## Data quality
+
+**Before insert: `src/validation.py`.** Bad rows are logged, stored in `rejected_prices` and skipped. They never
+crash the run.
+
+| Check | Action |
+|---|---|
+| missing open/high/low/close (None/NaN) | reject |
+| zero or negative price, negative volume | reject |
+| `high < low` | reject |
+| duplicate `(ticker, date)` in one fetch | reject the second |
+| **isolated spike**: a move beyond ±20% that reverses the next session | reject |
+| persistent jump beyond ±20% (not reversed: could be real news) | keep, warn |
+| open/close outside the day's range (more than 0.1%) | keep, warn |
+| 3+ missing NSE sessions between rows (holiday-aware) | warn |
+
+**After load: `src/post_load.py`.** 10 SQL checks: freshness against the NSE calendar, calendar gaps, impossible prices,
+high < low, signal coverage, close outside range, extreme moves, zero volume, and recent validation rejections.
+**In the schema:** CHECK constraints, foreign keys and triggers make impossible values unstorable
+(see [docs/MIGRATION_NOTES.md](docs/MIGRATION_NOTES.md)).
+
+## Signals
+
+Computed by `refresh_signals()` in `sql/03_signals.sql` from `COALESCE(adj_close, close)`:
+
+| Column | Meaning |
+|---|---|
+| `return_1d` | daily return (fraction) |
+| `momentum_20d`, `momentum_60d` | 20 / 60-session return |
+| `volatility_20d` | annualised st. dev. of the last 20 daily returns |
+| `sma_50`, `sma_200` | simple moving averages (SMA-200 is NULL until 200 sessions exist) |
+| `rsi_14` | 14-session RSI (simple-average version) |
+| `volume_zscore_20d` | today's volume against the previous 20 sessions |
+| `trend` | `UP` if price > SMA50 > SMA200, `DOWN` if the reverse, else `NEUTRAL` |
+| `is_anomaly` | move > 3σ of the previous 20 days, or volume z-score > 3 |
+| `high_52w`, `breakout_52w`, `pct_from_52w_high`, `strong_breakout` | 52-week high of the **previous** 252 sessions (today excluded, so a breakout is possible), the breakout flag, distance from the high, and breakout with volume z > 2 |
+
+Details and design notes: [docs/signals.md](docs/signals.md). The SQL engine is checked against an independent pandas
+implementation, both in the daily workflow (`verify_52w.py`) and in CI (`tests/test_db_integration.py`).
+
+## Reporting views (Power BI / Excel)
+
+Power BI connects through `readonly_access` to **views, not raw tables**:
+
+| View | Use |
+|---|---|
+| `v_latest_prices_by_sector` | one row per active stock: latest close, day change %, trend, RSI, 52-week distance, rank in sector |
+| `v_sector_daily_performance` | per sector per day: equal-weighted return, advancers/decliners, best/worst stock, turnover, sector index = 100 |
+| `v_sector_returns_summary` | sector scorecard: 1D / 1W / 1M / 3M / YTD % |
+| `v_company_daily` | one wide row per stock per day (price + signals + sector + location) |
+| `v_sector_daily` / `mv_sector_daily` | sector averages and breakout counts (materialized copy refreshed after each load) |
+| `v_sector_strength`, `v_region_daily`, `v_anomalies` | relative strength ranking, map page, anomaly table |
+| `v_pipeline_health`, `v_data_freshness`, `v_rejections_summary` | operations page |
+
+Never `DROP` `v_sector_daily`: its grants and `v_sector_strength` depend on it. Change it with `CREATE OR REPLACE VIEW`
+and add columns at the end only.
+
+## Testing
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+- **No database and no internet needed.** `tests/conftest.py` provides a fake psycopg connection and a fake
+  `yfinance.Ticker`. The suite covers validation, signal maths, upsert counting, fallback handling, the session guard,
+  and the backfill and daily jobs end to end.
+- **SQL tests** (`tests/test_db_integration.py` and the DB classes in the older unittest files) run when
+  `TEST_DATABASE_URL` points at a **throwaway** database with the schema applied. They run inside rolled-back
+  transactions and never read `DATABASE_URL`.
+
+```bash
+TEST_DATABASE_URL=postgresql://localhost/market_test python -m pytest
+```
+- CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.12 and 3.13. It also starts a PostgreSQL 17 service
+  container, applies every SQL file twice (proving idempotency) and runs the SQL tests.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `sql/01_schema.sql` … `07_trading_calendar.sql` | core tables, seed data, signal engine, views, audit and procedures, materialized view, NSE calendar |
+| `sql/08` … `11` | data-trust research layer (bitemporal versions, official reconciliation, trust score, second feed) |
+| `sql/12_integrity_and_reporting.sql` | extra constraints and indexes, `states`, `rejected_prices`, Power BI views |
+| `src/setup_db.py`, `backfill.py`, `daily_update.py`, `post_load.py` | the pipeline |
+| `src/prices.py`, `validation.py`, `db.py` | fetch and upsert, pre-insert validation, connection and run logging |
+| `src/verify_52w.py`, `dq_audit.py` | signal verification, DB vs Yahoo audit |
+| `src/fundamentals.py`, `benchmark.py`, `export_site.py` | weekly fundamentals, `EXPLAIN ANALYZE` benchmarks, dashboard export |
+| `src/revision_scan.py`, `official_prices.py`, `alt_feed.py`, `fragility.py`, `trust_report.py`, `universe.py`, `export_dataset.py` | research study |
+| `tests/` | pytest suite (mocked) and SQL integration tests |
+| `demo/viva_queries.sql`, `demo/transactions_demo.sql` | demo queries (joins, CTEs, window functions) and an ACID / isolation demo |
+| `docs/` | [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
+| `AUDIT.md` | ranked audit of bugs, risks and fixes |
+| `site/` | static dashboard (Chart.js + Leaflet) |
+
+## DBMS concepts demonstrated
+
+| Concept | Where |
+|---|---|
+| ER → relational mapping, functional dependencies, 1NF → BCNF, relational algebra | `docs/NORMALISATION.md`, `docs/MIGRATION_NOTES.md` |
+| Primary, composite, foreign and deferrable keys; CHECK / UNIQUE / NOT NULL; `NOT VALID` + `VALIDATE` | `sql/01_schema.sql`, `sql/12_integrity_and_reporting.sql` |
+| B-tree, partial and composite indexes; `EXPLAIN ANALYZE` | `sql/01`, `sql/12`, `docs/BENCHMARKS.md` |
+| Views, a materialized view with `REFRESH … CONCURRENTLY`, `LATERAL` joins | `sql/04`, `sql/06`, `sql/12` |
+| PL/pgSQL function with window functions and UPSERT | `refresh_signals()` |
+| Stored procedure with row locking | `replace_company()` |
+| Triggers (BEFORE validation, AFTER audit, conditional `WHEN`) | `sql/05`, `sql/08` |
+| Roles and least privilege | `readonly_access` |
+| Transactions, savepoints, isolation levels | `demo/transactions_demo.sql` |
+| Temporal (bitemporal) tables, GiST exclusion constraint, time travel | `sql/08_point_in_time.sql` |
+
+## Known limitations
+
+- **Single free data source.** Yahoo Finance is unofficial. The research layer measures how often it disagrees with
+  official NSE/BSE closes ([docs/TRUST.md](docs/TRUST.md)), but the dashboard still relies on it.
+- **End of day only**, and today's bar appears only after 16:30 IST.
+- **The NSE holiday table currently covers 2026**: add the 2027 list in December, or the strict freshness check will
+  fail on the first 2027 holiday.
+- **Equal-weighted sector aggregates** (no free-float market caps in the schema).
+- **Fundamentals** are weekly snapshots of Yahoo's current values; there is no point-in-time history before the project started.
 
 ## Team
 

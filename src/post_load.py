@@ -54,6 +54,9 @@ CHECKS = [
     ("zero_volume_30d", "warn",
      "SELECT COUNT(*) FROM daily_prices WHERE price_date >= CURRENT_DATE - 30 AND volume = 0",
      "Zero-volume days in the last 30 days"),
+    ("rejected_rows_7d", "warn",
+     "SELECT COUNT(*) FROM rejected_prices WHERE rejected_at >= now() - INTERVAL '7 days'",
+     "Fetched rows skipped by src/validation.py in the last 7 days (see rejected_prices)"),
 ]
 
 
