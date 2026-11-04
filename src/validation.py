@@ -109,16 +109,16 @@ def missing_sessions(d0: date, d1: date, holidays: Iterable[date] = ()) -> list[
 def _validate_ticker(ticker, rows, previous, holidays, cfg, result):
     seen, unique = set(), []
     for r in sorted(rows, key=lambda r: r[1]):
+        rejects, warns = _row_issues(r, cfg)
+        if rejects:
+            result.rejected.extend(rejects)
+            continue
         if r[1] in seen:
             result.rejected.append(Issue(ticker, r[1], DUPLICATE, REJECT, "second row for this ticker and date", r))
             continue
         seen.add(r[1])
-        rejects, warns = _row_issues(r, cfg)
         result.warnings.extend(warns)
-        if rejects:
-            result.rejected.extend(rejects)
-        else:
-            unique.append(r)
+        unique.append(r)
 
     accepted = []
     ref = previous[1] if previous else None
