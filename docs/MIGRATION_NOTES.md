@@ -90,8 +90,8 @@ JSONB and the pipeline run. A rejected row then still leaves evidence you can qu
   A second index would only slow down inserts.
 - Indexes on `companies(is_active)` or `in_dashboard`: the table has about 80 rows, so a sequential scan is always
   cheaper.
-- BRIN on `daily_prices(price_date)`: it would be fine for a table of tens of millions of rows. At about 73k rows the existing
-  B-tree is faster and already in use.
+- BRIN on `daily_prices(price_date)`: it would be fine for a table of tens of millions of rows. At about 210k rows (dashboard plus research
+  stocks, see `docs/BENCHMARKS.md`) the existing B-tree is fast and already in use.
 
 ## Views for Power BI
 
