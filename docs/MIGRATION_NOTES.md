@@ -111,3 +111,27 @@ Design choices:
   shows **active** stocks only.
 - These are plain views. Power BI in Import mode reads them once per refresh. If DirectQuery becomes slow, materialise
   `v_sector_daily_performance` like `mv_sector_daily` and refresh it in `post_load.py`.
+
+## Power BI compatibility
+
+Migration 12 **removes, renames, retypes or reorders nothing**. It only adds tables, views, constraints and indexes.
+This was checked on 4 Nov 2026 by building the `main` schema, upgrading it with this branch (the same path production
+takes), and comparing:
+
+| Check | Result |
+|---|---|
+| Columns of every table, view and materialized view (name, position, type) | 433 before, all 433 unchanged; 61 new columns, all in new objects |
+| `cities.region`, `v_company_daily.region`, `v_region_daily.region` | still there, same type, same values |
+| Data returned by `v_company_daily`, `v_latest_snapshot`, `v_sector_daily`, `mv_sector_daily`, `v_sector_strength`, `v_region_daily`, `v_anomalies`, `v_data_freshness` | identical, row for row (checksums match) |
+| `readonly_access` grants | 40 before, 40 kept, 6 added (the new objects) |
+
+So no backward-compatible shim is needed: existing `.pbix` reports keep working without a refresh of their field list.
+`tests/test_powerbi_contract.py` pins these columns in CI, so a later change that drops, renames or reorders a
+Power BI column fails the build. Adding columns at the end stays allowed.
+
+**What Power BI users gain (optional):** `v_latest_prices_by_sector`, `v_sector_daily_performance`,
+`v_sector_returns_summary` and `v_rejections_summary`. They appear after *Get data → Refresh* in the navigator.
+
+**One change for people who *write* to the database (not Power BI):** adding a city whose state is not yet in `states`
+now needs the state inserted first (or in the same transaction), because of the deferred FK `cities_state_region_fk`.
+`src/setup_db.py` handles this automatically for the seed file.
