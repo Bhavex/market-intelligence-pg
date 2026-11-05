@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
@@ -184,29 +185,52 @@ def reconcile_bytes(conn, raw: bytes, day: date | None = None, url: str = "file"
     return results
 
 
+RETRYABLE = ("blocked", "error")
+PACE = {"delay": 1.5, "retries": 3, "backoff": 2.0, "sleep": time.sleep}
+
+
+def _attempt(fetcher, u):
+    retrieved_at = datetime.now(timezone.utc)
+    try:
+        code, body = fetcher._get(u)
+    except Exception as exc:
+        return None, (u, "blocked", None, retrieved_at, f"{type(exc).__name__}: {exc}"[:300])
+    if code == 200 and body:
+        return (u, body, retrieved_at), None
+    status = "not_published" if code == 404 else "blocked" if code in (401, 403, 429) or code >= 500 else "error"
+    return None, (u, status, b"", retrieved_at, f"HTTP {code}")
+
+
 def download(day: date, fetcher=None):
     from official_prices import Fetcher
     fetcher = fetcher or Fetcher("NSE")
-    if not fetcher.warmed:
+    if not getattr(fetcher, "warmed", False):
         try:
             fetcher._get("https://www.nseindia.com/", timeout=15)
         except Exception:
             pass
         fetcher.warmed = True
     tried = []
-    for fmt in (bhavcopy.expected_format(day), bhavcopy.LEGACY if bhavcopy.expected_format(day) == bhavcopy.UDIFF else bhavcopy.UDIFF):
+    first = bhavcopy.expected_format(day)
+    for fmt in (first, bhavcopy.LEGACY if first == bhavcopy.UDIFF else bhavcopy.UDIFF):
         u = bhavcopy.url(day, fmt)
-        retrieved_at = datetime.now(timezone.utc)
-        try:
-            code, body = fetcher._get(u)
-        except Exception as exc:
-            tried.append((u, "blocked", None, retrieved_at, f"{type(exc).__name__}: {exc}"[:300]))
-            continue
-        if code == 200 and body:
-            return u, body, retrieved_at, tried
-        tried.append((u, "not_published" if code == 404 else "blocked" if code in (401, 403, 429) or code >= 500 else "error",
-                      b"", retrieved_at, f"HTTP {code}"))
+        for attempt in range(PACE["retries"]):
+            PACE["sleep"](PACE["delay"] if attempt == 0 else PACE["delay"] * PACE["backoff"] ** attempt)
+            ok, failed = _attempt(fetcher, u)
+            if ok:
+                return ok[0], ok[1], ok[2], tried
+            tried.append(failed)
+            if failed[1] not in RETRYABLE:
+                break
     return None, None, None, tried
+
+
+def stored_dates(conn, days) -> set:
+    if not days:
+        return set()
+    rows = conn.execute("""SELECT DISTINCT trade_date FROM reconciliation_results
+                           WHERE trade_date = ANY(%s) AND bhav_close IS NOT NULL""", (list(days),)).fetchall()
+    return {r[0] for r in rows}
 
 
 def summarize(results: list) -> pd.DataFrame:
@@ -263,9 +287,13 @@ def main():
     ap.add_argument("--days", type=int, default=5, help="most recent NSE trading sessions to reconcile")
     ap.add_argument("--date", type=date.fromisoformat)
     ap.add_argument("--file", help="reconcile a bhavcopy file already on disk instead of downloading")
+    ap.add_argument("--delay", type=float, default=PACE["delay"], help="seconds to wait before each NSE request")
+    ap.add_argument("--retries", type=int, default=PACE["retries"], help="attempts per file for blocked or failed requests")
+    ap.add_argument("--force", action="store_true", help="download again even if a session is already reconciled")
     ap.add_argument("--report-since", type=date.fromisoformat,
                     help="only report stored results from this date on; download nothing")
     args = ap.parse_args()
+    PACE["delay"], PACE["retries"] = max(0.0, args.delay), max(1, args.retries)
     if args.report_since:
         with get_conn() as conn:
             text = report(stored(conn, args.report_since))
@@ -285,10 +313,15 @@ def main():
                     days = [args.date]
                 else:
                     days = [r[0] for r in conn.execute(
-                        """SELECT d::date FROM generate_series(expected_latest_trading_day() - 40,
+                        """SELECT d::date FROM generate_series(expected_latest_trading_day() - (%s * 3 / 2 + 30),
                                   expected_latest_trading_day(), INTERVAL '1 day') AS g(d)
-                           WHERE is_trading_day(d::date) ORDER BY d DESC LIMIT %s""", (args.days,)).fetchall()]
+                           WHERE is_trading_day(d::date) ORDER BY d DESC LIMIT %s""", (args.days, args.days)).fetchall()]
+                done = set() if args.force else stored_dates(conn, days)
+                if done:
+                    print(f"skipping {len(done)} session(s) already reconciled (use --force to redo)")
                 for d in sorted(days):
+                    if d in done:
+                        continue
                     u, raw, at, tried = download(d)
                     for tu, status, body, tat, err in tried:
                         ledger.write(conn, [bhav_ledger_entry(d, tu, body, status, error=err, run_id=run["run_id"],

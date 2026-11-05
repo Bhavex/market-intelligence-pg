@@ -84,6 +84,10 @@ Items to report:
 4. **Reconciliation with the bhavcopy.** Match on instrument and date, and classify each pair: `match`,
    `last_traded_not_close`, `previous_session_close`, `split_or_bonus_basis`, `intraday_value`, `unexplained`,
    `missing_in_yahoo` or `missing_in_bhavcopy`.
+   - *Note on the reference price.* NSE's official closing price is not simply the last traded price. NSE computes
+     it from trades near the end of the session (understood to be a volume-weighted average over the final minutes), so
+     close and last can differ on any day. That is why `last_traded_not_close` is its own class.
+     **Verify against NSE documentation before citing** both the method and the length of the window.
 5. **Session coverage.** Build expected ticker-session pairs from the calendar and dated membership. Classify each one
    as present, holiday, suspended, not yet published, fetch failed or missing.
 6. **Run safety.** A database lease with a heartbeat and fencing keeps runs from overlapping. A stale-run detector
