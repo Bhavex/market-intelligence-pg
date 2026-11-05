@@ -180,3 +180,52 @@ def test_stored_results_can_be_reported_without_downloading(conn):
     text = R.report([r for r in rows if r["trade_date"] == day])
     assert any(r["ticker"] == "INFY.NS" and r["classification"] == "match" for r in rows)
     assert "Sessions: 1 (2024-01-04 to 2024-01-04)" in text
+
+
+class FlakyFetcher:
+    def __init__(self, codes):
+        self.codes, self.urls, self.warmed = list(codes), [], True
+
+    def _get(self, url, timeout=25):
+        self.urls.append(url)
+        code = self.codes.pop(0)
+        if isinstance(code, Exception):
+            raise code
+        return code, (b"x" if code == 200 else b"")
+
+
+class TestPacing:
+    @pytest.fixture(autouse=True)
+    def pace(self, monkeypatch):
+        naps = []
+        monkeypatch.setitem(R.PACE, "sleep", naps.append)
+        monkeypatch.setitem(R.PACE, "delay", 1.0)
+        monkeypatch.setitem(R.PACE, "retries", 3)
+        monkeypatch.setitem(R.PACE, "backoff", 2.0)
+        return naps
+
+    def test_blocked_requests_are_retried_with_backoff(self, pace):
+        f = FlakyFetcher([403, ConnectionError("reset"), 200])
+        u, raw, at, tried = R.download(date(2024, 11, 4), f)
+        assert raw == b"x" and len(f.urls) == 3 and len(tried) == 2
+        assert pace == [1.0, 2.0, 4.0]
+
+    def test_not_published_is_not_retried_and_falls_back_to_the_other_format(self, pace):
+        f = FlakyFetcher([404, 404])
+        u, raw, at, tried = R.download(date(2024, 11, 4), f)
+        assert raw is None and [t[1] for t in tried] == ["not_published", "not_published"]
+        assert f.urls[0].endswith("20241104_F_0000.csv.zip") and "cm04NOV2024bhav" in f.urls[1]
+        assert pace == [1.0, 1.0]
+
+    def test_gives_up_after_the_retry_limit(self, pace):
+        f = FlakyFetcher([503] * 6)
+        assert R.download(date(2024, 11, 4), f)[1] is None and len(f.urls) == 6
+
+
+@pytest.mark.skipif(not TEST_DB, reason="needs TEST_DATABASE_URL")
+def test_already_reconciled_sessions_are_skipped(conn):
+    day = date(2024, 1, 4)
+    put(conn, "INFY.NS", day, 1510.25)
+    R.reconcile_bytes(conn, LEGACY_FILE.read_bytes(), day)
+    assert R.stored_dates(conn, [day, date(2024, 1, 5)]) == {day}
+    assert R.stored_dates(conn, []) == set()
