@@ -44,3 +44,7 @@ The loop in `daily_update.py` runs one ticker at a time, about 100 active ticker
 | `refresh_signals` is skipped when no price row was inserted or updated and no price row since the start date lacks a signal | Saves the signal recompute on retry runs and no-change runs | If prices were written by an earlier run that crashed before signals were computed, the missing-signal check forces the refresh |
 
 The heal window (the last 5 sessions are re-fetched every run) is deliberate, because it lets Yahoo's late corrections overwrite earlier values. It was not narrowed.
+
+## Schema migrations
+
+`setup_db.py` keeps a `schema_migrations` table with `(filename, checksum, applied_at)`. On the first run against an existing database the table is empty, so every file is applied once more (all files are idempotent) and recorded. After that, only new files run. If an applied file is edited, the run fails and names the file. Put changes, including next year's NSE holidays, in a new numbered SQL file.
