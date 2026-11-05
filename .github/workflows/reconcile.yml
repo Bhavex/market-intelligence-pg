@@ -9,6 +9,9 @@ on:
       date:
         description: "Reconcile one session instead, YYYY-MM-DD (empty = use days)"
         default: ""
+      report_since:
+        description: "Only report results already stored from this date, YYYY-MM-DD (downloads nothing)"
+        default: ""
 
 permissions:
   contents: read
@@ -25,6 +28,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DAYS: ${{ github.event.inputs.days || '5' }}
       ONE_DATE: ${{ github.event.inputs.date }}
+      REPORT_SINCE: ${{ github.event.inputs.report_since }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -37,4 +41,6 @@ jobs:
       - name: Download bhavcopy files and reconcile with Yahoo
         shell: bash
         run: |
-          if [ -n "$ONE_DATE" ]; then python src/reconcile.py --date "$ONE_DATE"; else python src/reconcile.py --days "$DAYS"; fi
+          if [ -n "$REPORT_SINCE" ]; then python src/reconcile.py --report-since "$REPORT_SINCE"
+          elif [ -n "$ONE_DATE" ]; then python src/reconcile.py --date "$ONE_DATE"
+          else python src/reconcile.py --days "$DAYS"; fi

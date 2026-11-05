@@ -152,3 +152,31 @@ class TestReconcileDatabase:
         with pytest.raises(psycopg.errors.RestrictViolation):
             with conn.transaction():
                 conn.execute("DELETE FROM reconciliation_results WHERE trade_date = %s", (day,))
+
+
+class TestReport:
+    def test_report_counts_sessions_tickers_and_lists_each_disagreement(self):
+        rows = [{"ticker": t, "trade_date": d, "classification": c, "yahoo_close": y, "bhav_close": 100.0,
+                 "bhav_last": 100.4, "bhav_low": 97.0, "bhav_high": 103.0, "diff_bp": (y / 100 - 1) * 1e4}
+                for t, d, c, y in [("A.NS", date(2026, 11, 3), "match", 100.0), ("B.NS", date(2026, 11, 3), "match", 100.0),
+                                   ("A.NS", date(2026, 11, 4), "last_traded_not_close", 100.4),
+                                   ("B.NS", date(2026, 11, 4), "intraday_value", 101.5)]]
+        text = R.report(rows)
+        assert "Sessions: 2 (2026-11-03 to 2026-11-04); tickers: 2; pairs: 4; disagreements: 2 (50.00%)." in text
+        assert "| match | 2 |" in text and "| intraday_value | 1 |" in text
+        assert "| 2026-11-04 | A.NS | last_traded_not_close | 100.40 | 100.00 | 100.40 | 97.00-103.00 | 40.0 |" in text
+        assert "| 2026-11-04 | B.NS | intraday_value | 101.50 |" in text
+
+    def test_empty_report(self):
+        assert "Nothing reconciled" in R.report([])
+
+
+@pytest.mark.skipif(not TEST_DB, reason="needs TEST_DATABASE_URL")
+def test_stored_results_can_be_reported_without_downloading(conn):
+    day = date(2024, 1, 4)
+    put(conn, "INFY.NS", day, 1510.25)
+    R.reconcile_bytes(conn, LEGACY_FILE.read_bytes(), day)
+    rows = R.stored(conn, day)
+    text = R.report([r for r in rows if r["trade_date"] == day])
+    assert any(r["ticker"] == "INFY.NS" and r["classification"] == "match" for r in rows)
+    assert "Sessions: 1 (2024-01-04 to 2024-01-04)" in text

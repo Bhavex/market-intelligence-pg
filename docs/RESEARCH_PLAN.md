@@ -75,10 +75,39 @@ The project already produces conclusions that can be re-checked:
   only by the scheduled and manual workflows.
 - **NSE access.** Bhavcopy downloads can be blocked from cloud runners; coverage is reported, not assumed.
 
+## Preliminary results
+
+### NSE bhavcopy reconciliation, run on 4 Nov 2026 (21:05 UTC)
+
+Source: [workflow run 41911480806](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41911480806) on
+`main` at `f566910`, default input `days = 5`. These are **preliminary**: five sessions only, run once.
+
+| | |
+|---|---|
+| Did the NSE files download from a GitHub runner? | **Yes**, all 5 (none blocked or missing) |
+| Sessions compared | 5: 29 Oct, 30 Oct, 2 Nov, 3 Nov and 4 Nov 2026 |
+| Instruments per session | 81 (the 25 dashboard stocks plus the 56-stock research universe) |
+| Stock-days compared | 405 |
+| `match` (within max(₹0.05, 1 bp)) | 397 (98.0%) |
+| `last_traded_not_close` (Yahoo stored NSE's last traded price, not the official close) | 4 (1.0%) |
+| `intraday_value` (Yahoo's value lies inside the day's range but is neither close nor last) | 4 (1.0%) |
+| `previous_session_close`, `split_or_bonus_basis`, `unexplained`, `missing_in_yahoo`, `missing_in_bhavcopy` | 0 |
+
+Disagreements: 8 of 405 stock-days (2.0%, Wilson 95% interval about 1.0% to 3.9%).
+
+What this does and does not show:
+- **It does not show** which tickers or dates disagreed, or by how much. The run printed only counts. The fix on
+  `claude/reconcile-findings` lists every disagreement. The rows are already stored, so they can be listed without
+  downloading again: run the workflow with `report_since = 2026-10-29`.
+- The run took place about 10 hours after the 4 Nov close, after all three daily loads. An `intraday_value` on the last
+  session could therefore be a Yahoo bar that was not final when it was fetched, not a permanent error. Prospective
+  revision capture should tell the two apart.
+- It does show that cloud runners can fetch both bhavcopy formats, which was the main open risk for milestone 2.
+
 ## First milestones
 
 1. Deploy this branch; confirm `v_tata_hero_switch.evidence` on production.
-2. Run **NSE bhavcopy reconciliation** for the last 250 sessions; publish `v_reconciliation_summary`.
+2. Run **NSE bhavcopy reconciliation** for the last 250 sessions; publish `v_reconciliation_summary`. *(First 5-session run done on 4 Nov 2026; see Preliminary results.)*
 3. Let **Prospective revision capture** run for 8 weeks; publish `v_revision_capture_summary` and the rate table.
 4. Re-run the **Signal backtest (real data)** with dated membership and quality masking; compare with C1/C2.
 5. Label the first adjudication sample (200 flagged, 200 unflagged) with two people; publish the scores.
