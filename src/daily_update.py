@@ -6,6 +6,8 @@ Yahoo's final values on the next run without any manual edit. Today's bar is nev
 before FINAL_AFTER (16:30 IST, i.e. 15:30 close + buffer; see prices.py). The log reports how many
 rows were inserted, updated, unchanged or held back. Signals are recomputed afterwards."""
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import fetch_config
@@ -33,6 +35,41 @@ HEAL_START_SQL = """
     OFFSET %(skip)s LIMIT 1
 """
 
+FETCH_WORKERS = int(os.environ.get("FETCH_WORKERS", "8"))
+
+MISSING_SIGNALS_SQL = """
+    SELECT EXISTS (SELECT 1 FROM daily_prices p
+                   LEFT JOIN signals s ON s.ticker = p.ticker AND s.signal_date = p.price_date
+                   WHERE p.price_date >= %s AND s.ticker IS NULL)
+"""
+
+
+def _capture(fetch, ticker, start):
+    try:
+        return fetch(ticker, start), None
+    except Exception as exc:
+        return None, exc
+
+
+def prefetch(jobs, fetch=None, workers=None):
+    fetch = fetch or fetch_rows_ex
+    workers = FETCH_WORKERS if workers is None else workers
+    if workers <= 1:
+        for t, start in jobs:
+            yield t, start, _capture(fetch, t, start)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [(t, start, pool.submit(_capture, fetch, t, start)) for t, start in jobs]
+        for t, start, fut in futures:
+            yield t, start, fut.result()
+
+
+def needs_signal_refresh(conn, rows_written, since):
+    if rows_written:
+        return True
+    row = conn.execute(MISSING_SIGNALS_SQL, (since,)).fetchone()
+    return bool(row and row[0])
+
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -52,12 +89,14 @@ def main():
             record_settings(conn, run["run_id"], settings_daily)
             earliest_start = _now().date()
             totals = dict(inserted=0, updated=0, unchanged=0, held_back=0, rejected=0)
-            for t in tickers:
-                # normally heal_start; further back if the stored data is older than that (a missed gap)
-                start = min(heal_start, latest[t]) if t in latest else DEFAULT_START
+            jobs = [(t, min(heal_start, latest[t]) if t in latest else DEFAULT_START) for t in tickers]
+            fetched = prefetch(jobs)
+            for _ in jobs:
+                with stage("fetch_yahoo_wait", quiet=True):
+                    t, start, (f, fetch_exc) = next(fetched)
                 try:
-                    with stage("fetch_yahoo", quiet=True):
-                        f = fetch_rows_ex(t, start)
+                    if fetch_exc is not None:
+                        raise fetch_exc
                     if not f.daily and not f.fallback and not f.held_back:
                         ledger.record_fetch(conn, f, None, run["run_id"], "daily_update", settings_daily, settings_hourly)
                         run["tickers_failed"].append(t)
@@ -95,7 +134,11 @@ def main():
 
             run_lease.fence(conn)
             with stage("refresh_signals"):
-                n_sig = conn.execute("SELECT refresh_signals(%s)", (earliest_start,)).fetchone()[0]
+                if needs_signal_refresh(conn, run["rows_upserted"], earliest_start):
+                    n_sig = conn.execute("SELECT refresh_signals(%s)", (earliest_start,)).fetchone()[0]
+                else:
+                    n_sig = 0
+                    print("No price rows changed and no signals missing; refresh_signals skipped")
             conn.commit()
             max_date = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]
             summary = (f"prices: {totals['inserted']} inserted, {totals['updated']} updated, "
