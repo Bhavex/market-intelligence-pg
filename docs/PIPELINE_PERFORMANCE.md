@@ -48,3 +48,7 @@ The heal window (the last 5 sessions are re-fetched every run) is deliberate, be
 ## Schema migrations
 
 `setup_db.py` keeps a `schema_migrations` table with `(filename, checksum, applied_at)`. On the first run against an existing database the table is empty, so every file is applied once more (all files are idempotent) and recorded. After that, only new files run. If an applied file is edited, the run fails and names the file. Put changes, including next year's NSE holidays, in a new numbered SQL file.
+
+## New-year holiday safety
+
+`validation.load_holidays` checks whether `market_holidays` has any row for the current year. If it has none, it logs a warning (`NSE holiday list for <year> is missing ... treating only weekends as non-trading days`) and the run continues. The validation gap check then treats only weekends as non-trading days, and so do `is_trading_day()` and `expected_latest_trading_day()` in SQL. `tests/test_holiday_fallback.py` covers both the Python and the SQL path.
