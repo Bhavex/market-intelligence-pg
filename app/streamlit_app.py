@@ -13,6 +13,7 @@ pages = st.navigation({
     ],
     "Operations": [
         st.Page("views/pipeline.py", title="Pipeline health", icon=":material/monitor_heart:"),
+        st.Page("views/trust.py", title="Data trust", icon=":material/verified:"),
     ],
 })
 pages.run()
