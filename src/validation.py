@@ -170,13 +170,25 @@ def log_result(ticker: str, result: ValidationResult) -> None:
         log.info("%s %s warn %s: %s", ticker, i.price_date, i.check, i.detail)
 
 
-def load_holidays(conn) -> set:
+def check_holiday_coverage(holidays, today: date | None = None) -> bool:
+    year = (today or date.today()).year
+    if any(d.year == year for d in holidays):
+        return True
+    log.warning(
+        "NSE holiday list for %s is missing from market_holidays; treating only weekends as "
+        "non-trading days for %s. Add the %s holidays in a new sql/ file.", year, year, year)
+    return False
+
+
+def load_holidays(conn, today: date | None = None) -> set:
     try:
         with conn.transaction():
-            return {r[0] for r in conn.execute("SELECT holiday_date FROM market_holidays").fetchall()}
+            holidays = {r[0] for r in conn.execute("SELECT holiday_date FROM market_holidays").fetchall()}
     except Exception as exc:
         log.warning("market_holidays not readable (%s); gap check uses weekdays only", exc)
         return set()
+    check_holiday_coverage(holidays, today)
+    return holidays
 
 
 def previous_price(conn, ticker: str, before: date):
