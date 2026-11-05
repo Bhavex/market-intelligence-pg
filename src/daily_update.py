@@ -13,8 +13,10 @@ import ledger
 import observations
 import quality
 import run_lease
+import timing
 from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import FetchError, _now, fetch_rows_ex, upsert_rows
+from timing import stage
 from validation import load_holidays, screen
 
 DEFAULT_START = date(2015, 1, 1)
@@ -54,19 +56,24 @@ def main():
                 # normally heal_start; further back if the stored data is older than that (a missed gap)
                 start = min(heal_start, latest[t]) if t in latest else DEFAULT_START
                 try:
-                    f = fetch_rows_ex(t, start)
+                    with stage("fetch_yahoo", quiet=True):
+                        f = fetch_rows_ex(t, start)
                     if not f.daily and not f.fallback and not f.held_back:
                         ledger.record_fetch(conn, f, None, run["run_id"], "daily_update", settings_daily, settings_hourly)
                         run["tickers_failed"].append(t)
                         print(f"{t}: FAILED (Yahoo returned no bars from {start})")
                         continue
-                    checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
-                    fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
-                    observations.record_fetched(conn, f, checked.result, fetch_ids)
+                    with stage("validate_screen", quiet=True):
+                        checked = screen(conn, t, f.daily, f.fallback, start, holidays, run["run_id"])
+                    with stage("ledger_observations", quiet=True):
+                        fetch_ids = ledger.record_fetch(conn, f, checked.result, run["run_id"], "daily_update", settings_daily, settings_hourly)
+                        observations.record_fetched(conn, f, checked.result, fetch_ids)
                     totals["rejected"] += len(checked.result.rejected)
-                    s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
-                    g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)    # approximate rows only fill gaps
-                    quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
+                    with stage("upsert_prices", quiet=True):
+                        s = upsert_rows(conn, checked.daily, settings_id=settings_daily)
+                        g = upsert_rows(conn, checked.fallback, insert_only=True, settings_id=settings_hourly)
+                    with stage("quality_assess", quiet=True):
+                        quality.assess_ticker(conn, t, checked.result, start, run["run_id"])
                     inserted, updated = s.inserted + g.inserted, s.updated
                     unchanged = s.unchanged + g.unchanged
                     for k, v in zip(totals, (inserted, updated, unchanged, f.held_back)):
@@ -87,7 +94,8 @@ def main():
                     print(f"{t}: FAILED ({exc})")
 
             run_lease.fence(conn)
-            n_sig = conn.execute("SELECT refresh_signals(%s)", (earliest_start,)).fetchone()[0]
+            with stage("refresh_signals"):
+                n_sig = conn.execute("SELECT refresh_signals(%s)", (earliest_start,)).fetchone()[0]
             conn.commit()
             max_date = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]
             summary = (f"prices: {totals['inserted']} inserted, {totals['updated']} updated, "
@@ -99,6 +107,7 @@ def main():
                               + (f"; lineage write failures: {lost}" if lost else ""))
             print(summary)
             print(run["message"])
+            timing.report("daily_update")
 
         dash = {r[0] for r in conn.execute("SELECT ticker FROM companies WHERE is_active AND in_dashboard")}
         dash_failed = [t for t in run["tickers_failed"] if t in dash]

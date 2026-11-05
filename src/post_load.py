@@ -7,7 +7,9 @@ Usage:  python src/post_load.py"""
 import os
 import sys
 
+import timing
 from db import get_conn, pipeline_run
+from timing import stage
 
 # The final run of the day (next morning) sets STRICT_FRESHNESS=1: if any trading day is
 # still missing then, the check fails and GitHub emails the repo owner.
@@ -73,15 +75,17 @@ def main():
     results = []
     with get_conn() as conn:
         with pipeline_run(conn, "data_quality") as run:
-            conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_sector_daily")
-            conn.commit()
+            with stage("refresh_mv_sector_daily"):
+                conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_sector_daily")
+                conn.commit()
             print("Refreshed mv_sector_daily")
             expected = conn.execute("SELECT expected_latest_trading_day()").fetchone()[0]
             latest = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]
             print(f"Expected latest trading day: {expected} | latest in database: {latest} | strict: {STRICT}")
 
             for name, severity, sql, meaning in CHECKS:
-                bad = conn.execute(sql).fetchone()[0]
+                with stage(f"check_{name}"):
+                    bad = conn.execute(sql).fetchone()[0]
                 status = "PASS" if bad == 0 else ("FAIL" if severity == "error" else "WARN")
                 results.append((name, severity, bad, status, meaning))
                 print(f"{status:4}  {name:22} {bad:>6}  {meaning}")
@@ -91,6 +95,7 @@ def main():
             n_fail = sum(r[3] == "FAIL" for r in results)
             n_warn = sum(r[3] == "WARN" for r in results)
             run["rows_upserted"] = len(results)
+            timing.report("post_load")
             run["message"] = f"{len(results)} checks: {n_fail} failed, {n_warn} warnings"
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
