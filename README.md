@@ -36,7 +36,18 @@ project at VIT Vellore.
 - **Point-in-time research foundations:** a fetch ledger, append-only price observations with an as-of query,
   timestamped quality states instead of future-dependent cleaning, dated universe membership, and NSE bhavcopy
   reconciliation in both file formats ([DATA_LINEAGE.md](docs/DATA_LINEAGE.md), [RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md)).
-- **353 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
+- **Runs that cannot collide:** every job takes a database lease with a heartbeat. Writes are fenced on it, and a
+  stale-run detector closes runs that died. Crash tests SIGKILL a real load before its writes, mid-transaction and after
+  commit; in all three cases the recovered database equals a clean run.
+- **Coverage you can audit:** every expected ticker-session pair, taken from the NSE calendar and dated membership, is
+  labelled present, holiday, suspended, not yet published, fetch failed or missing (`v_session_coverage_summary`).
+- **Backtest accounting checked by hand:** a share-and-cash ledger with next-session execution, fees, splits, bonuses,
+  dividends and missing prices, verified against hand-calculated fixtures. It reports results at three cost levels,
+  turnover, block-bootstrap intervals, a held-out final period, and a registry of every trial ever run
+  ([BACKTEST.md](docs/BACKTEST.md)).
+- **Adjudication kit and paper outline:** a blind two-labeller sample with precision, false-rejection rate and Cohen's
+  κ, and a research-paper skeleton ([docs/paper](docs/paper/README.md)).
+- **423 automated tests,** run in CI on every push. Most need no database and no internet; the SQL tests run against
   a throwaway PostgreSQL 17 container.
 
 > **Scope.** End-of-day data, not a real-time feed. Educational analytics, not investment advice.
@@ -59,7 +70,7 @@ flowchart LR
         F["fetch last 5 NSE sessions<br/>prices.py"] --> V["validate rows<br/>validation.py"]
         V --> U["idempotent UPSERT<br/>daily_prices"]
         U --> R["refresh_signals()<br/>PL/pgSQL window functions"]
-        R --> Q["REFRESH MATERIALIZED VIEW<br/>11 data-quality checks"]
+        R --> Q["REFRESH MATERIALIZED VIEW<br/>12 data-quality checks"]
         Q -->|failure| AL["open / update GitHub issue<br/>pipeline_alert.py"]
     end
 
@@ -151,6 +162,17 @@ price history is today's revised snapshot and the universe is today's members ([
 buy-and-hold. These figures come from the **Signal backtest (real data)** workflow, which runs on the production Neon
 database ([run 41892962103](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41892962103)). Full write-up:
 [docs/BACKTEST.md](docs/BACKTEST.md).
+
+Those Neon figures came from the earlier weight-based engine. The engine is now a share-and-cash ledger
+(`src/portfolio.py`), checked against hand-calculated fixtures. On the same synthetic data it gives the same results
+before costs; after costs CAGR moves by at most 0.02 pp a year. `--rigour` adds:
+- zero, realistic and high cost levels;
+- turnover and cost drag;
+- 95% block-bootstrap intervals;
+- a held-out final 3 years, with parameter selection on the earlier period only;
+- a deflated Sharpe probability over every trial in `backtest_trials`.
+
+The **Signal backtest (real data)** workflow runs all of this.
 
 ## Query performance
 
@@ -350,6 +372,8 @@ or a `.env` file, and `SAMPLE_YEARS` sets the amount of synthetic history. The i
 | **Approximate rows never overwrite** | if Yahoo's daily series misses a weekday, the day is rebuilt from hourly bars (`source = 'yahoo_hourly'`), **insert-only** |
 | **Failures are visible** | each job logs a `pipeline_runs` row (`success` / `partial` / `failed`). The Action goes red if more than half the stocks fail or a data-quality check errors |
 | **Provenance** | every value change made through normal DML is versioned in `price_versions` with the `run_id` that caused it |
+| **No overlapping runs** | `pipeline_run()` takes the `pipeline` lease in `run_leases` (`acquire_run_lease()`, row-locked), waits up to 10 minutes, then fails with `RunLeaseBusy`. A heartbeat thread renews it every 60 s on its own connection, and each price write re-checks it `FOR SHARE`, so a run that lost the lease stops before writing |
+| **Dead runs are closed** | `reap_stale_runs()` runs at the start of every job (and via `python src/run_lease.py`). It marks `running` rows with no heartbeat for 30 minutes as `failed`; taking over an expired lease does the same for the dead holder |
 
 ## Data quality
 
@@ -423,7 +447,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-There are **353 tests**. Without a database, 283 run and 70 database tests skip by design:
+There are **423 tests**. Without a database, 339 run and 84 database tests skip by design:
 - **No database and no internet needed** for most of them. `tests/conftest.py` fakes the psycopg connection and
   `yfinance.Ticker`. The suite covers:
   - validation, signal maths, upsert counting and the session guard;
@@ -433,7 +457,15 @@ There are **353 tests**. Without a database, 283 run and 70 database tests skip 
   - the backtest's look-ahead, lag and cost rules, quality masking as known at each decision, and dated membership;
   - quality-state transitions, the fetch ledger, observations and revision capture;
   - both bhavcopy parsers on fixture files, and every reconciliation class;
+  - the portfolio ledger against hand-calculated fixtures (rebalancing, splits, bonuses, dividends, missing prices,
+    costs, next-session execution);
+  - the bootstrap, the deflated Sharpe ratio, the holdout split and the trial registry;
+  - adjudication sampling and scoring (kappa, precision and false-rejection rate worked out by hand);
+  - the run lease;
   - the failure-alert script.
+- **Crash tests** (`tests/test_run_safety.py`) start a real `daily_update` in a subprocess against a scratch copy of the
+  test database and SIGKILL it at three points. Each time they prove that a second run is refused, the detector closes
+  the dead run, and the rerun leaves exactly the rows of a clean run.
 - **SQL tests** run when `TEST_DATABASE_URL` points at a **throwaway** database. They cover `refresh_signals()` against
   an independent pandas engine, every constraint and view, the Power BI column contract, and live-mode API calls. They
   run inside rolled-back transactions and never read `DATABASE_URL`.
@@ -465,12 +497,14 @@ suite.
 | `src/fetch_config.py`, `ledger.py`, `observations.py`, `quality.py` | fetch settings and price basis, fetch ledger, append-only observations, timestamped quality states |
 | `src/revision_capture.py`, `bhavcopy.py`, `reconcile.py` | prospective revision capture; legacy and UDiFF bhavcopy parsers; bhavcopy vs Yahoo reconciliation |
 | `sql/13` … `19` | price semantics, quality states, fetch ledger, observations and selection, revision capture, instruments and membership, reconciliation |
-| `scripts/` | `load_sample_data.py` / `build_demo_data.py` (throwaway databases only), `docker_init.py`, `pipeline_alert.py` |
+| `sql/20` … `22` | run leases and the stale-run detector, session coverage, backtest trial registry |
+| `src/run_lease.py`, `portfolio.py`, `backtest_rigour.py`, `adjudication.py` | lease, heartbeat and fencing; share-and-cash backtest ledger; cost levels, bootstrap, holdout and trial registry; adjudication sampling and scoring |
+| `scripts/` | `load_sample_data.py` / `build_demo_data.py` (throwaway databases only), `docker_init.py`, `pipeline_alert.py`, `adjudication_sample.py` / `adjudication_score.py` |
 | `Dockerfile`, `docker-compose.yml` | one-command local stack |
 | `.github/workflows/` | **scheduled:** `daily_update` (3× per trading day, with failure alerts), `revision_capture` (weekdays 22:53 IST), `benchmark`, `weekly_fundamentals` and `trust_study` (weekly). **After another workflow:** `site` (after the daily update or the trust study). **Manual:** `backfill`, `backtest` (real data), `reconcile` (NSE bhavcopy), `dataset`. **On every push:** `tests` |
 | `tests/` | pytest suite (mocked) and SQL integration tests |
 | `demo/viva_queries.sql`, `demo/transactions_demo.sql` | demo queries (joins, CTEs, window functions) and an ACID / isolation demo |
-| `docs/` | [DATA_LINEAGE](docs/DATA_LINEAGE.md), [RESEARCH_PLAN](docs/RESEARCH_PLAN.md), [CLAIMS](docs/CLAIMS.md), [API](docs/API.md), [BACKTEST](docs/BACKTEST.md), [PERFORMANCE](docs/PERFORMANCE.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [RESUME](docs/RESUME.md), [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
+| `docs/` | [paper](docs/paper/README.md), [DATA_LINEAGE](docs/DATA_LINEAGE.md), [RESEARCH_PLAN](docs/RESEARCH_PLAN.md), [CLAIMS](docs/CLAIMS.md), [API](docs/API.md), [BACKTEST](docs/BACKTEST.md), [PERFORMANCE](docs/PERFORMANCE.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [RESUME](docs/RESUME.md), [SCHEMA](docs/SCHEMA.md), [NORMALISATION](docs/NORMALISATION.md), [MIGRATION_NOTES](docs/MIGRATION_NOTES.md), [BENCHMARKS](docs/BENCHMARKS.md), [TRUST](docs/TRUST.md), [signals](docs/signals.md), [DEMO_DEFENCE](docs/DEMO_DEFENCE.md) |
 | `AUDIT.md` | ranked audit of bugs, risks and fixes |
 | `site/` | static dashboard (Chart.js + Leaflet) |
 
@@ -490,6 +524,8 @@ suite.
 | Temporal (bitemporal) tables, GiST exclusion constraint, time travel | `sql/08_point_in_time.sql` |
 | Append-only tables enforced by triggers, generated columns, as-of functions | `sql/14`–`19` (`forbid_mutation()`, `price_observations.value_hash`, `observations_as_of`, `quality_as_of`) |
 | Valid-time intervals with exclusion constraints on `daterange` | `sql/18_instruments.sql` (`universe_membership`, `instrument_symbols`) |
+| Leases with row locks (`SELECT … FOR UPDATE` to acquire, `FOR SHARE` to fence writes), heartbeats and takeover | `sql/20_run_leases.sql`, `src/run_lease.py` |
+| Set-returning SQL functions with `MATERIALIZED` CTEs, used to classify 77,000 pairs in about 1.4 s | `sql/21_session_coverage.sql` |
 
 ## Known limitations
 
@@ -499,8 +535,11 @@ suite.
 - **Single free data source.** Yahoo Finance is unofficial. The research layer measures how often it disagrees with
   official NSE/BSE closes ([docs/TRUST.md](docs/TRUST.md)), but the dashboard still relies on it.
 - **End of day only**, and today's bar appears only after 16:30 IST.
-- **The NSE holiday table currently covers 2026**: add the 2027 list in December, or the strict freshness check will
-  fail on the first 2027 holiday.
+- **The NSE holiday table currently covers 2026**: add the 2027 list in December (and a `calendar_coverage` row), or
+  the strict freshness check will fail on the first 2027 holiday. For earlier years, session coverage *infers* a holiday
+  when no instrument has a price that day.
+- **Backtest ledger simplifications:** fractional shares, dividends credited on the ex-date, and the same one-way cost
+  in bp for every stock.
 - **Equal-weighted sector aggregates** (no free-float market caps in the schema).
 - **Fundamentals** are weekly snapshots of Yahoo's current values; there is no point-in-time history before the project started.
 

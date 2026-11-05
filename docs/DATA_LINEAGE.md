@@ -35,7 +35,7 @@ flowchart TB
 `daily_prices` keeps its role and its columns, so every existing view, the dashboard, the API and Power BI read it
 exactly as before. The new append-only tables around it hold the history and the evidence.
 
-## The new tables (migrations 13–19)
+## The new tables (migrations 13–22)
 
 | Migration | Object | Purpose |
 |---|---|---|
@@ -46,6 +46,9 @@ exactly as before. The new append-only tables around it hold the history and the
 | `17_revision_capture.sql` | `revision_captures`, `revision_capture_coverage`, `v_revision_capture_summary`, `v_revision_capture_rate` | Prospective revision measurement. |
 | `18_instruments.sql` | `instruments`, `instrument_symbols`, `universe_membership`, `universe_members(u, d)`, `v_universe_membership`, `v_tata_hero_switch` | Stable identity and dated membership. |
 | `19_bhavcopy_reconciliation.sql` | `reconciliation_results`, `v_reconciliation_latest`, `v_reconciliation_summary` | Official-file reconciliation. |
+| `20_run_leases.sql` | `run_leases`, `run_lease_log`, `pipeline_runs.heartbeat_at`, `acquire_run_lease()`, `renew_run_lease()`, `release_run_lease()`, `reap_stale_runs()`, `v_run_leases`, `v_stale_runs`, `v_lease_holdings`, `v_lease_overlaps` | One writer at a time, and dead runs closed. The lease log is append-only. |
+| `21_session_coverage.sql` | `calendar_coverage`, `trading_suspensions`, `expected_sessions()`, `session_coverage()`, `v_expected_sessions`, `v_session_coverage`, `v_session_coverage_summary`, `v_session_coverage_by_ticker` | Every expected ticker-session pair, classified. |
+| `22_backtest_trials.sql` | `backtest_trials`, `v_backtest_trial_counts`, `v_backtest_holdout_looks` | Every backtest evaluation ever run. Append-only. |
 
 "Append-only" is enforced by the database, not by convention: a `BEFORE UPDATE OR DELETE` trigger raises
 `restrict_violation`. Tests show that `UPDATE` and `DELETE` fail on every one of these tables. (`TRUNCATE` bypasses row
@@ -171,6 +174,62 @@ trade date, falling back to **ISIN**. It compares the **unadjusted** official cl
 Results are append-only in `reconciliation_results`; `v_reconciliation_summary` gives counts and sizes. Run it on real
 data with the manual workflow **NSE bhavcopy reconciliation** (`reconcile.yml`). NSE sometimes blocks cloud runners;
 every attempt, including blocked ones, is in `fetch_log`.
+
+## 8. Run safety: leases, heartbeats, fencing and the stale-run detector
+
+Two loads writing the same rows at once could interleave their fetch, validation and upsert steps. The scheduled
+workflows share a GitHub concurrency group, but the manual backfill and weekly fundamentals do not, and a concurrency
+group cannot help once a job is cancelled mid-run. The database now enforces it:
+
+1. `pipeline_run()` inserts its `pipeline_runs` row, runs `reap_stale_runs()`, then calls
+   `acquire_run_lease('pipeline', run_id, job, ttl)`. That function locks the lease row `FOR UPDATE`. A live lease held
+   by another run is refused. `pipeline_run()` polls for up to `PIPELINE_LEASE_WAIT_S` (600 s), then fails with
+   `RunLeaseBusy`, and that run is recorded as `failed` with the holder in its message. An expired lease is taken over,
+   and the dead holder's run is marked `failed`.
+2. A daemon thread on its **own** connection renews the lease every `PIPELINE_HEARTBEAT_S` (60 s, TTL 300 s) and stamps
+   `pipeline_runs.heartbeat_at`.
+3. **Fencing.** Every `upsert_rows()` call, and the signal refresh, first runs
+   `SELECT … FROM run_leases WHERE run_id = me AND expires_at > clock_timestamp() FOR SHARE` in the write transaction.
+   A takeover has to wait for that transaction to finish. A run that has lost the lease raises `LeaseLost` (a
+   `SystemExit`, so per-ticker error handling cannot swallow it) before writing anything.
+4. `reap_stale_runs(30 min)` marks `running` rows with no heartbeat for 30 minutes and no live lease as `failed`. It
+   runs at the start of every job and from `python src/run_lease.py`. A run's final status update is
+   `WHERE status = 'running'`, so a late finish cannot overwrite a failure the detector recorded. `post_load.py` warns
+   (`stale_runs_7d`) when the detector or a takeover closed a run in the last week.
+5. `run_lease_log` keeps every acquired, released, refused, taken-over, lost and reaped event. `v_lease_overlaps` must
+   always be empty.
+
+The lease is a table, not `pg_advisory_lock`, because session-level advisory locks do not survive a transaction-mode
+connection pooler such as Neon's `-pooler` endpoint.
+
+`tests/test_run_safety.py` SIGKILLs a real `daily_update` at three points: before any write, mid-transaction (rows
+upserted, not committed), and right after a commit. Each time it checks that:
+- the next run is refused;
+- the dead run is closed, by the detector or by a takeover;
+- after a clean rerun, `daily_prices`, `price_versions`, `price_observations`, `price_selection`, `quality_states` and
+  `signals` are identical to a single uninterrupted run.
+
+## 9. Session coverage
+
+`expected_sessions(from, to, universe)` returns one row per weekday on which an instrument was a dated member of the
+universe, with the Yahoo symbol valid that day. `session_coverage(...)` labels each pair with the first rule that
+matches:
+
+| Status | Evidence |
+|---|---|
+| `present` | a `daily_prices` row (the detail names its source, and flags a row stored on an NSE holiday) |
+| `holiday` | `market_holidays`. For years with no `calendar_coverage` row, it is *inferred* when no instrument has a price and no bhavcopy row exists that day (the detail says "inferred") |
+| `suspended` | a `trading_suspensions` interval, or *inferred* when that day's NSE bhavcopy was reconciled and the instrument is not in it |
+| `not_yet_published` | the session is not final yet (before 16:30 IST), or no failure is recorded and it is still within the grace period (until 07:10 IST next day, the strict morning check) |
+| `fetch_failed` | the latest Yahoo fetch after the close (whose window covered the date) was `error`, `parse_error` or `blocked`, or a later `daily_update` run within 10 days listed the ticker in `tickers_failed` |
+| `missing` | anything else. The detail separates "before the first stored price for this ticker" from real gaps, with or without a fetch after the close |
+
+The summary views:
+- `v_session_coverage_summary` counts pairs by year and status.
+- `v_session_coverage_by_ticker` gives coverage, both overall and since each ticker's first price.
+
+The whole dashboard universe (77,000 pairs on the test database) takes about 1.4 s. `p_as_of` lets a test or an audit
+ask what the classification was at an earlier time; presence itself uses the current table.
 
 ## What is point-in-time now, and what is not
 

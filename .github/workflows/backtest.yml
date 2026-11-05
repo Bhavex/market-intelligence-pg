@@ -9,6 +9,15 @@ on:
       lag:
         description: "Sessions between the signal close and the trade"
         default: "1"
+      holdout_years:
+        description: "Final years held out from parameter selection"
+        default: "3"
+      bootstrap_draws:
+        description: "Block-bootstrap resamples"
+        default: "2000"
+      block:
+        description: "Bootstrap block length in sessions"
+        default: "21"
 
 permissions:
   contents: read
@@ -21,6 +30,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       COST_BP: ${{ github.event.inputs.cost_bp || '11.2' }}
       LAG: ${{ github.event.inputs.lag || '1' }}
+      HOLDOUT_YEARS: ${{ github.event.inputs.holdout_years || '3' }}
+      BOOTSTRAP_DRAWS: ${{ github.event.inputs.bootstrap_draws || '2000' }}
+      BLOCK: ${{ github.event.inputs.block || '21' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -28,14 +40,20 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Backtest on the database (read-only queries)
-        run: python src/strategy_backtest.py --source db --seeds 0 --cost-bp "$COST_BP" --lag "$LAG" --out backtest_output --img backtest_output
+      - name: Create the trial registry table if it is missing (idempotent)
+        run: python src/setup_db.py
+      - name: Backtest on the database (reads prices; appends every evaluation to backtest_trials)
+        run: >-
+          python src/strategy_backtest.py --source db --seeds 0 --cost-bp "$COST_BP" --lag "$LAG"
+          --rigour --holdout-years "$HOLDOUT_YEARS" --bootstrap-draws "$BOOTSTRAP_DRAWS" --block "$BLOCK"
+          --registry auto --out backtest_output --img backtest_output
       - name: Summary
         run: |
           echo '### Backtest summary (derived metrics only)' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat backtest_output/summary_database.csv >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat backtest_output/rigour_summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: backtest-output

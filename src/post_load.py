@@ -58,6 +58,11 @@ CHECKS = [
      """SELECT COUNT(*) FROM price_selection
         WHERE selected_at >= now() - INTERVAL '7 days' AND action <> 'delete' AND observation_id IS NULL""",
      "Price rows written in the last 7 days with no recorded observation (lineage gap)"),
+    ("stale_runs_7d", "warn",
+     """SELECT COUNT(*) FROM pipeline_runs
+        WHERE started_at >= now() - INTERVAL '7 days' AND status = 'failed'
+          AND (message LIKE '%stale-run detector%' OR message LIKE '%taken over by run%')""",
+     "Runs in the last 7 days that died without finishing and were closed by the stale-run detector or a lease takeover"),
     ("rejected_rows_7d", "warn",
      "SELECT COUNT(*) FROM rejected_prices WHERE rejected_at >= now() - INTERVAL '7 days'",
      "Fetched rows skipped by src/validation.py in the last 7 days (see rejected_prices)"),

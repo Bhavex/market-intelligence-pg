@@ -12,6 +12,7 @@ import fetch_config
 import ledger
 import observations
 import quality
+import run_lease
 from db import active_tickers, get_conn, pipeline_run, record_settings
 from prices import FetchError, _now, fetch_rows_ex, upsert_rows
 from validation import load_holidays, screen
@@ -85,6 +86,7 @@ def main():
                     run["tickers_failed"].append(t)
                     print(f"{t}: FAILED ({exc})")
 
+            run_lease.fence(conn)
             n_sig = conn.execute("SELECT refresh_signals(%s)", (earliest_start,)).fetchone()[0]
             conn.commit()
             max_date = conn.execute("SELECT MAX(price_date) FROM daily_prices").fetchone()[0]

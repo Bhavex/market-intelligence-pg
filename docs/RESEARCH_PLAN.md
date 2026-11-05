@@ -31,6 +31,9 @@ The project already produces conclusions that can be re-checked:
 | Prospective revisions: the last 10 sessions daily, plus a rotating month of history | `revision_captures`, `revision_capture_coverage` | first scheduled run |
 | Official close vs Yahoo, classified | `reconciliation_results` | first manual run |
 | Universe as it was on each date | `universe_membership` | seeded from evidence in the database |
+| Which expected sessions are present, missing, failed, suspended or not yet published | `v_session_coverage` | computed on demand |
+| Every backtest evaluation, including every look at the holdout | `backtest_trials` | first backtest run after deployment |
+| Human labels for a stratified sample of flagged and unflagged rows | `scripts/adjudication_sample.py` output | first labelling round |
 
 ## Method
 
@@ -51,7 +54,15 @@ The project already produces conclusions that can be re-checked:
    - C1/C2: the sign of the excess CAGR over buy-and-hold flips, or the Sharpe ranking against the benchmark flips;
    - C3: a flip-rate confidence interval excludes the baseline;
    - C4: Spearman rank correlation with the baseline ranking falls below 0.8.
-4. **Report every conclusion,** including those that do not change.
+4. **Measure the detector** before trusting it:
+   - two people label a stratified, blind sample (`scripts/adjudication_sample.py`);
+   - `scripts/adjudication_score.py` reports precision, false-rejection rate, miss rate and Cohen's κ;
+   - the measured error rates calibrate (f).
+5. **Guard against our own overfitting:**
+   - parameters are chosen on the development period only, and the final 3 years are held out;
+   - every evaluation is registered (`backtest_trials`), and the deflated Sharpe probability uses all of them;
+   - results are reported at zero, realistic and high costs, with block-bootstrap intervals.
+6. **Report every conclusion,** including those that do not change. The write-up follows `docs/paper/outline.md`.
 
 ## Threats to validity
 
@@ -70,4 +81,5 @@ The project already produces conclusions that can be re-checked:
 2. Run **NSE bhavcopy reconciliation** for the last 250 sessions; publish `v_reconciliation_summary`.
 3. Let **Prospective revision capture** run for 8 weeks; publish `v_revision_capture_summary` and the rate table.
 4. Re-run the **Signal backtest (real data)** with dated membership and quality masking; compare with C1/C2.
-5. Write up which conclusions changed.
+5. Label the first adjudication sample (200 flagged, 200 unflagged) with two people; publish the scores.
+6. Write up which conclusions changed, following `docs/paper/outline.md`.

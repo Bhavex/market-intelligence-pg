@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
+import portfolio
 from india_costs import REALISTIC_BP
 
 TRADING_DAYS = 252
@@ -93,6 +94,7 @@ class Result:
     gross_returns: pd.Series
     turnover: pd.Series
     holdings: dict = field(default_factory=dict)
+    ledger: object = None
 
 
 def signal_dates(index: pd.DatetimeIndex) -> list:
@@ -124,76 +126,63 @@ def equal_weights(px: pd.DataFrame) -> pd.Series:
     return pd.Series(1.0 / len(names), index=names)
 
 
+def _reconstitute(membership: Membership, day: pd.Timestamp, row: pd.Series, cols: list):
+    def target(current: pd.Series) -> pd.Series:
+        members = membership.members(day)
+        w = current.copy()
+        held = set(w.index[w > 0])
+        leavers = sorted(held - members)
+        if not leavers:
+            return w
+        freed = float(w[leavers].sum())
+        w[leavers] = 0.0
+        joiners = [t for t in sorted(members - held) if t in cols and not np.isnan(row[t])]
+        if joiners:
+            w[joiners] += freed / len(joiners)
+        elif w.sum() > 0:
+            w = w / w.sum() * (w.sum() + freed)
+        return w
+    return target
+
+
 def simulate(px: pd.DataFrame, weight_fn: Callable[[pd.DataFrame], pd.Series], cfg: BacktestConfig, name: str,
              rebalance: str = "monthly", timeline: QualityTimeline | None = None,
-             membership: Membership | None = None) -> Result:
+             membership: Membership | None = None, actions=(), basis: str = "total_return",
+             exec_prices: pd.DataFrame | None = None) -> Result:
     px = px.sort_index()
-    rets = px.pct_change(fill_method=None).fillna(0.0)
     dates = px.index
+    cols = list(px.columns)
     position = {d: i for i, d in enumerate(dates)}
     candidates = [d for d in signal_dates(dates) if position[d] >= cfg.warmup_days]
     if rebalance == "once":
         candidates = candidates[:1]
-    orders = {}
+    orders = []
     for d in candidates:
-        exec_pos = position[d] + cfg.lag_days
-        if exec_pos < len(dates):
-            known = px.iloc[: position[d] + 1]
-            if membership is not None:
-                known = known[[c for c in known.columns if c in membership.members(d)]]
-            if timeline is not None:
-                known = timeline.mask(d, known)
-            target = weight_fn(known)
-            if len(target):
-                orders[dates[exec_pos]] = (d, target.reindex(px.columns).fillna(0.0))
-    r_all = rets.to_numpy()
-    targets = {position[d]: (sig, t.to_numpy()) for d, (sig, t) in orders.items()}
-    reconstitute = {}
+        if position[d] + cfg.lag_days >= len(dates):
+            continue
+        known = px.iloc[: position[d] + 1]
+        if membership is not None:
+            known = known[[c for c in known.columns if c in membership.members(d)]]
+        if timeline is not None:
+            known = timeline.mask(d, known)
+        target = weight_fn(known)
+        if len(target):
+            orders.append(portfolio.Order(d, target.reindex(cols).fillna(0.0)))
+    exec_positions = {position[o.signal_date] + cfg.lag_days for o in orders}
     if membership is not None and rebalance == "once" and orders:
-        first_exec = position[min(orders)]
+        first_exec = min(exec_positions)
         for c in membership.change_dates():
             pos = int(dates.searchsorted(c))
-            if first_exec < pos < len(dates) and pos not in targets:
-                reconstitute[pos] = dates[pos]
-    cols = list(px.columns)
-    w = np.zeros(px.shape[1])
-    n = len(dates)
-    net, gross, turn = np.zeros(n), np.zeros(n), np.zeros(n)
-    holdings = {}
-    for i in range(n):
-        r = float(w @ r_all[i])
-        gross[i] = r
-        value = 1 + r
-        if value > 0 and w.any():
-            w = w * (1 + r_all[i]) / value
-        if i in reconstitute and i not in targets:
-            members = membership.members(reconstitute[i])
-            held = {cols[j] for j in np.flatnonzero(w > 0)}
-            leavers = sorted(held - members)
-            if leavers:
-                target = w.copy()
-                freed = sum(target[cols.index(t)] for t in leavers)
-                for t in leavers:
-                    target[cols.index(t)] = 0.0
-                joiners = [t for t in sorted(members - held) if t in cols and not np.isnan(px.iloc[i][t])]
-                if joiners:
-                    for t in joiners:
-                        target[cols.index(t)] += freed / len(joiners)
-                elif target.sum() > 0:
-                    target = target / target.sum() * (target.sum() + freed)
-                targets[i] = (reconstitute[i], target)
-        if i in targets:
-            signal_day, target = targets[i]
-            t = float(np.abs(target - w).sum())
-            r = (1 + r) * (1 - t * cfg.cost_bp / 1e4) - 1
-            w = target.copy()
-            turn[i] = t
-            holdings[signal_day] = sorted(px.columns[target > 0])
-        net[i] = r
-    first = min(orders) if orders else dates[0]
+            if first_exec < pos < len(dates) and pos not in exec_positions:
+                orders.append(portfolio.Order(dates[pos], _reconstitute(membership, dates[pos], px.iloc[pos], cols),
+                                              exec_date=dates[pos]))
+                exec_positions.add(pos)
+    led = portfolio.run(px, orders, cfg.cost_bp, cfg.lag_days, actions, basis, exec_prices=exec_prices)
+    free = portfolio.run(px, orders, 0.0, cfg.lag_days, actions, basis, exec_prices=exec_prices)
+    holdings = {d: sorted(t.index[t > 0]) for d, t in led.targets.items()}
+    first = dates[min(exec_positions)] if orders else dates[0]
     keep = dates >= first
-    return Result(name, pd.Series(net, index=dates)[keep], pd.Series(gross, index=dates)[keep],
-                  pd.Series(turn, index=dates)[keep], holdings)
+    return Result(name, led.returns[keep], free.returns[keep], led.turnover[keep], holdings, led)
 
 
 def _label(x) -> str:
@@ -426,6 +415,11 @@ def main():
     ap.add_argument("--cost-bp", type=float, default=REALISTIC_BP)
     ap.add_argument("--lag", type=int, default=1)
     ap.add_argument("--seeds", type=int, default=20)
+    ap.add_argument("--rigour", action="store_true", help="cost levels, turnover, bootstrap, holdout split, trial registry")
+    ap.add_argument("--holdout-years", type=float, default=3.0)
+    ap.add_argument("--bootstrap-draws", type=int, default=2000)
+    ap.add_argument("--block", type=int, default=21)
+    ap.add_argument("--registry", choices=["auto", "db", "csv", "none"], default="auto")
     args = ap.parse_args()
     cfg = BacktestConfig(cost_bp=args.cost_bp, lag_days=args.lag)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -472,11 +466,31 @@ def main():
                 args.img / f"backtest_{tag}.png", note=note)
     print(table[["final_value_of_100", "cagr", "volatility", "sharpe", "max_drawdown", "hit_rate_vs_benchmark",
                  "turnover_per_year", "cagr_before_costs"]].round(4).to_string())
+    if args.rigour:
+        run_rigour(args, px, sectors, cfg, tag, timeline, membership)
     if tag == "synthetic" and args.seeds:
         study = seed_study(range(1, args.seeds + 1), cfg)
         study.to_csv(args.out / "synthetic_seed_study.csv", index=False)
         plot_seed_study(study, args.img / "backtest_synthetic_seeds.png")
         print(study.groupby(["world", "strategy"])[["excess_cagr_vs_benchmark", "hit_rate"]].agg(["mean", "std"]).round(4))
+
+
+def run_rigour(args, px, sectors, cfg, tag, timeline, membership):
+    import os
+    import backtest_rigour as R
+    conn = None
+    if tag == "database" and args.registry in ("auto", "db"):
+        import psycopg
+        conn = psycopg.connect(os.environ["DATABASE_URL"])
+    try:
+        registry = R.registry_for(args.registry, args.out, conn)
+        out = R.run(px, sectors, cfg, args.out, registry, tag, args.holdout_years, args.bootstrap_draws, args.block,
+                    timeline=timeline, membership=membership)
+    finally:
+        if conn is not None:
+            conn.close()
+    print(out["markdown"])
+    return out
 
 
 if __name__ == "__main__":

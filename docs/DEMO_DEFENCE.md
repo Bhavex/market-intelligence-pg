@@ -121,7 +121,7 @@ GitHub Actions at 17:10, 20:10 and 07:10 IST runs these steps:
 1. `setup_db.py` applies the idempotent schema.
 2. `daily_update.py` fetches the last 5 NSE sessions per stock, validates them (`validation.py`), upserts them, and calls
    `refresh_signals()`.
-3. `post_load.py` refreshes the materialized view and runs 11 quality checks.
+3. `post_load.py` refreshes the materialized view and runs 12 quality checks.
 4. `verify_52w.py` cross-checks the 52-week signals against pandas.
 
 Every job logs to `pipeline_runs`.
