@@ -216,6 +216,46 @@ def summarize(results: list) -> pd.DataFrame:
     return df.groupby("classification").size().reset_index(name="n").sort_values("n", ascending=False)
 
 
+REPORT_SQL = """
+SELECT ticker, trade_date, classification, yahoo_close, bhav_close, bhav_last, bhav_prev_close, bhav_low, bhav_high,
+       diff_bp, detail
+FROM v_reconciliation_latest
+WHERE trade_date >= %s
+ORDER BY trade_date, ticker
+"""
+
+
+def _num(x):
+    return "" if x is None or (isinstance(x, float) and pd.isna(x)) else f"{float(x):,.2f}"
+
+
+def report(results) -> str:
+    df = pd.DataFrame(list(results))
+    if df.empty:
+        return "### Bhavcopy reconciliation\n\nNothing reconciled.\n"
+    counts = df.groupby("classification").size().sort_values(ascending=False)
+    bad = df[df["classification"] != "match"].sort_values(["trade_date", "ticker"])
+    lines = ["### Bhavcopy reconciliation", "",
+             f"Sessions: {df['trade_date'].nunique()} ({min(df['trade_date'])} to {max(df['trade_date'])}); "
+             f"tickers: {df['ticker'].nunique()}; pairs: {len(df)}; disagreements: {len(bad)} "
+             f"({100 * len(bad) / len(df):.2f}%).", "", "| Classification | Pairs |", "|---|---|"]
+    lines += [f"| {k} | {v} |" for k, v in counts.items()]
+    if len(bad):
+        lines += ["", "| Date | Ticker | Class | Yahoo close | NSE close | NSE last | NSE low-high | Diff (bp) |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for r in bad.itertuples():
+            lines.append(f"| {r.trade_date} | {r.ticker} | {r.classification} | {_num(r.yahoo_close)} | "
+                         f"{_num(r.bhav_close)} | {_num(r.bhav_last)} | {_num(r.bhav_low)}-{_num(r.bhav_high)} | "
+                         f"{'' if r.diff_bp is None or pd.isna(r.diff_bp) else f'{float(r.diff_bp):.1f}'} |")
+    return "\n".join(lines) + "\n"
+
+
+def stored(conn, since: date) -> list:
+    cur = conn.execute(REPORT_SQL, (since,))
+    names = [c.name for c in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
 def main():
     from db import get_conn, pipeline_run
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -223,7 +263,17 @@ def main():
     ap.add_argument("--days", type=int, default=5, help="most recent NSE trading sessions to reconcile")
     ap.add_argument("--date", type=date.fromisoformat)
     ap.add_argument("--file", help="reconcile a bhavcopy file already on disk instead of downloading")
+    ap.add_argument("--report-since", type=date.fromisoformat,
+                    help="only report stored results from this date on; download nothing")
     args = ap.parse_args()
+    if args.report_since:
+        with get_conn() as conn:
+            text = report(stored(conn, args.report_since))
+        print(text)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+                fh.write(text)
+        return
     all_results = []
     with get_conn() as conn:
         with pipeline_run(conn, "reconcile") as run:
@@ -258,12 +308,12 @@ def main():
             run["rows_upserted"] = len(all_results)
             run["message"] = ", ".join(f"{r.classification} {r.n}" for r in table.itertuples()) or "nothing reconciled"
             print(run["message"])
+    text = report(all_results)
+    print(text)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as fh:
-            fh.write("### Bhavcopy reconciliation\n\n| Classification | Instruments |\n|---|---|\n")
-            for r in table.itertuples():
-                fh.write(f"| {r.classification} | {r.n} |\n")
+            fh.write(text)
 
 
 if __name__ == "__main__":
