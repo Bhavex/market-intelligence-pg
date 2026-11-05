@@ -38,3 +38,6 @@ jobs:
         run: python src/setup_db.py
       - name: Re-fetch and record differences (daily_prices is not modified)
         run: python src/revision_capture.py --recent "$RECENT" --rotating-months "$ROTATING"
+      - name: Write revision report to job summary
+        if: always()
+        run: python src/revision_report.py --output "$GITHUB_STEP_SUMMARY"
