@@ -171,6 +171,17 @@ Items to report:
   - `python -m pytest` runs without a database.
   - The CI integration job runs the database tests against a throwaway PostgreSQL 17.
 
+## Preliminary results (not findings yet)
+
+**NSE bhavcopy reconciliation, 4 Nov 2026** ([run 41911480806](https://github.com/Bhavex/market-intelligence-pg/actions/runs/41911480806)).
+This is a single run over 5 sessions (29 Oct to 4 Nov 2026), 81 instruments a session, 405 stock-days in total.
+- All 5 NSE files downloaded from a GitHub runner.
+- 397 stock-days matched, 4 were `last_traded_not_close` and 4 were `intraday_value`, with no other class. That is 8
+  disagreements (2.0%, Wilson 95% interval about 1.0% to 3.9%).
+- Not yet known: which tickers they were, whether they persist after revision capture, and the rate over 250 sessions.
+
+Use it only as a pilot for RQ1. It shows that the method runs end to end, not how often the vendor is wrong.
+
 ## 9. What exists and what is pending
 
 | Part | State |
@@ -178,7 +189,7 @@ Items to report:
 | Lineage, quality states, ledger, revision capture, instruments, bhavcopy | merged (research-foundation) |
 | Run lease, session coverage, backtest ledger, rigour suite, adjudication tool | this branch |
 | Eight weeks of prospective capture | pending deployment |
-| First bhavcopy reconciliation on 250 sessions | pending a manual run |
+| First bhavcopy reconciliation | 5-session pilot run on 4 Nov 2026 (8 of 405 disagree); the 250-session run is pending |
 | Labelled adjudication sample | pending two labellers |
 | Alternative-history runner for RQ3 | not written |
-| Any result in this paper | none yet |
+| Any result in this paper | none yet beyond the 5-session reconciliation pilot |
