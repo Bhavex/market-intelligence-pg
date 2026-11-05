@@ -1,0 +1,11 @@
+{"coverage": [
+ {"run_id": 1, "ticker": "TCS", "sample": "recent", "window_start": "2026-10-01", "window_end": "2026-10-14", "rows_compared": 10, "rows_differing": 1, "checked_at": "2026-10-15T12:00:00+00:00"},
+ {"run_id": 1, "ticker": "INFY", "sample": "recent", "window_start": "2026-10-01", "window_end": "2026-10-14", "rows_compared": 10, "rows_differing": 0, "checked_at": "2026-10-15T12:00:00+00:00"},
+ {"run_id": 2, "ticker": "INFY", "sample": "rotating", "window_start": "2025-03-01", "window_end": "2025-03-31", "rows_compared": 20, "rows_differing": 1, "checked_at": "2026-10-16T12:00:00+00:00"}
+], "captures": [
+ {"run_id": 1, "ticker": "TCS", "price_date": "2026-10-13", "sample": "recent", "kind": "value_changed", "field": "close", "stored_value": 4000.0, "fetched_value": 4002.0, "rel_diff": 0.0005, "stored_loaded_at": "2026-10-13T13:00:00+00:00", "detected_at": "2026-10-15T12:00:00+00:00"},
+ {"run_id": 1, "ticker": "TCS", "price_date": "2026-10-13", "sample": "recent", "kind": "value_changed", "field": "volume", "stored_value": 1000.0, "fetched_value": 1100.0, "rel_diff": 0.1, "stored_loaded_at": "2026-10-13T13:00:00+00:00", "detected_at": "2026-10-15T12:00:00+00:00"},
+ {"run_id": 3, "ticker": "TCS", "price_date": "2026-10-13", "sample": "recent", "kind": "value_changed", "field": "close", "stored_value": 4000.0, "fetched_value": 4002.0, "rel_diff": 0.0005, "stored_loaded_at": "2026-10-13T13:00:00+00:00", "detected_at": "2026-10-20T12:00:00+00:00"},
+ {"run_id": 2, "ticker": "INFY", "price_date": "2025-03-10", "sample": "rotating", "kind": "value_changed", "field": "adj_close", "stored_value": 1500.0, "fetched_value": 1485.0, "rel_diff": -0.01, "stored_loaded_at": "2025-03-10T13:00:00+00:00", "detected_at": "2026-10-16T12:00:00+00:00"},
+ {"run_id": 2, "ticker": "INFY", "price_date": "2025-03-11", "sample": "rotating", "kind": "missing_in_feed", "field": null, "stored_value": null, "fetched_value": null, "rel_diff": null, "stored_loaded_at": null, "detected_at": "2026-10-16T12:00:00+00:00"}
+]}

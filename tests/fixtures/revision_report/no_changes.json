@@ -1,0 +1,3 @@
+{"coverage": [
+ {"run_id": 1, "ticker": "TCS", "sample": "recent", "window_start": "2026-10-01", "window_end": "2026-10-14", "rows_compared": 10, "rows_differing": 0, "checked_at": "2026-10-15T12:00:00+00:00"}
+], "captures": []}
