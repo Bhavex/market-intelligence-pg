@@ -1,0 +1,149 @@
+{
+  "generated": "2026-11-08",
+  "server_version": "17.11",
+  "runs": 7,
+  "measurements": [
+    {
+      "sql": "SELECT price_date, close FROM daily_prices WHERE ticker = 'INFY.NS' AND price_date >= CURRENT_DATE - 365",
+      "setup": [
+        "SET LOCAL enable_indexscan = off",
+        "SET LOCAL enable_bitmapscan = off",
+        "SET LOCAL enable_indexonlyscan = off"
+      ],
+      "warmup_ms": 29.13,
+      "runs_ms": [
+        15.385,
+        66.789,
+        15.329,
+        17.507,
+        15.092,
+        16.041,
+        15.501
+      ]
+    },
+    {
+      "sql": "SELECT price_date, close FROM daily_prices WHERE ticker = 'INFY.NS' AND price_date >= CURRENT_DATE - 365",
+      "setup": [],
+      "warmup_ms": 2.702,
+      "runs_ms": [
+        0.135,
+        0.123,
+        0.121,
+        0.132,
+        0.142,
+        0.14,
+        0.147
+      ]
+    },
+    {
+      "sql": "SELECT ticker, signal_date, anomaly_reason FROM signals WHERE is_anomaly AND signal_date >= CURRENT_DATE - 90",
+      "setup": [
+        "SET LOCAL enable_indexscan = off",
+        "SET LOCAL enable_bitmapscan = off",
+        "SET LOCAL enable_indexonlyscan = off"
+      ],
+      "warmup_ms": 48.749,
+      "runs_ms": [
+        55.306,
+        43.967,
+        43.048,
+        40.457,
+        40.546,
+        40.615,
+        40.348
+      ]
+    },
+    {
+      "sql": "SELECT ticker, signal_date, anomaly_reason FROM signals WHERE is_anomaly AND signal_date >= CURRENT_DATE - 90",
+      "setup": [],
+      "warmup_ms": 3.787,
+      "runs_ms": [
+        0.341,
+        0.381,
+        0.347,
+        0.324,
+        0.329,
+        0.343,
+        0.377
+      ]
+    },
+    {
+      "sql": "SELECT * FROM v_sector_daily WHERE price_date >= CURRENT_DATE - 365",
+      "setup": [],
+      "warmup_ms": 237.298,
+      "runs_ms": [
+        128.031,
+        129.184,
+        126.746,
+        135.501,
+        127.396,
+        128.262,
+        131.57
+      ]
+    },
+    {
+      "sql": "SELECT * FROM mv_sector_daily WHERE price_date >= CURRENT_DATE - 365",
+      "setup": [],
+      "warmup_ms": 6.191,
+      "runs_ms": [
+        0.235,
+        0.265,
+        0.243,
+        0.249,
+        0.244,
+        0.248,
+        0.249
+      ]
+    },
+    {
+      "sql": "SELECT ticker, AVG(close) FROM daily_prices WHERE price_date >= '2025-01-01' AND price_date < '2026-01-01' GROUP BY ticker",
+      "setup": [
+        "SET LOCAL enable_indexscan = off",
+        "SET LOCAL enable_bitmapscan = off",
+        "SET LOCAL enable_indexonlyscan = off"
+      ],
+      "warmup_ms": 18.574,
+      "runs_ms": [
+        18.903,
+        22.276,
+        18.686,
+        18.661,
+        19.071,
+        19.329,
+        18.684
+      ]
+    },
+    {
+      "sql": "SELECT ticker, AVG(close) FROM daily_prices_part WHERE price_date >= '2025-01-01' AND price_date < '2026-01-01' GROUP BY ticker",
+      "setup": [
+        "SET LOCAL enable_indexscan = off",
+        "SET LOCAL enable_bitmapscan = off",
+        "SET LOCAL enable_indexonlyscan = off"
+      ],
+      "warmup_ms": 4.746,
+      "runs_ms": [
+        4.804,
+        4.778,
+        6.932,
+        4.988,
+        4.935,
+        4.837,
+        4.917
+      ]
+    },
+    {
+      "sql": "SELECT refresh_signals(CURRENT_DATE - 30)",
+      "setup": [],
+      "warmup_ms": 7182.762,
+      "runs_ms": [
+        4770.134,
+        4747.329,
+        4847.22,
+        4805.263,
+        4827.555,
+        4826.666,
+        4794.662
+      ]
+    }
+  ]
+}
