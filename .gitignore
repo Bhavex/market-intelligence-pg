@@ -24,3 +24,9 @@ raw/
 results/private/
 
 adjudication/
+
+# ML feature cache (rebuilt from the database)
+data/cache/
+
+# Trained model files (rebuilt by src/ml_train.py)
+models/
